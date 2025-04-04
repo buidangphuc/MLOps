@@ -2,3 +2,5 @@ dvc
 mlflow
 scikit-learn
 dvc-s3
+matplotlib
+seaborn
