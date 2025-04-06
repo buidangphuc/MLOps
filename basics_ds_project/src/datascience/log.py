@@ -9,6 +9,7 @@ from loguru import logger
 
 
 class InterceptHandler(logging.Handler):
+
     def emit(self, record):
         # Get corresponding Loguru level if it exists
         try:
@@ -22,13 +23,18 @@ class InterceptHandler(logging.Handler):
             frame = frame.f_back
             depth += 1
 
-        logger.opt(depth=depth, exception=record.exc_info).log(level, record.getMessage())
+        logger.opt(depth=depth, exception=record.exc_info).log(
+            level, record.getMessage()
+        )
+
 
 LOG_DIR = os.path.join(os.path.dirname(__file__), "logs")
 LOG_STDOUT_FILENAME = "stdout.log"
 LOG_STDERR_FILENAME = "stderr.log"
 
+
 class Logger:
+
     def __init__(self):
         self.log_path = LOG_DIR
 
@@ -51,7 +57,8 @@ class Logger:
             log_stdout_file,
             **log_config,
             level="INFO",
-            filter=lambda record: record["level"].name == "INFO" or record["level"].no <= 25,
+            filter=lambda record: record["level"].name == "INFO"
+            or record["level"].no <= 25,
             backtrace=False,
             diagnose=False,
         )
@@ -60,7 +67,8 @@ class Logger:
             log_stderr_file,
             **log_config,
             level="ERROR",
-            filter=lambda record: record["level"].name == "ERROR" or record["level"].no >= 30,
+            filter=lambda record: record["level"].name == "ERROR"
+            or record["level"].no >= 30,
             backtrace=True,
             diagnose=True,
         )

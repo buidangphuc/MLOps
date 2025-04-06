@@ -1,16 +1,18 @@
-import os
-import yaml
-from src.datascience import log
 import json
-import joblib
-from ensure import ensure_annotations
-from box import ConfigBox
+import os
 from pathlib import Path
 from typing import Any
+
+import joblib
+import yaml
+from box import ConfigBox
 from box.exceptions import BoxValueError
+from ensure import ensure_annotations
+
+from src.datascience import log
 
 
-@ensure_annotations # ensure type hints are used
+@ensure_annotations  # ensure type hints are used
 def read_yaml(path_to_yaml: Path) -> ConfigBox:
     """reads yaml file and returns
 
@@ -28,12 +30,11 @@ def read_yaml(path_to_yaml: Path) -> ConfigBox:
         with open(path_to_yaml) as yaml_file:
             content = yaml.safe_load(yaml_file)
             log.info(f"yaml file: {path_to_yaml} loaded successfully")
-            return ConfigBox(content) # returning as class attributes instead of dict
+            return ConfigBox(content)  # returning as class attributes instead of dict
     except BoxValueError:
         raise ValueError("yaml file is empty")
     except Exception as e:
         raise e
-        
 
 
 @ensure_annotations
@@ -49,6 +50,7 @@ def create_directories(path_to_directories: list, verbose=True):
         if verbose:
             log.info(f"created directory at: {path}")
 
+
 @ensure_annotations
 def save_json(path: Path, data: dict):
     """save json data
@@ -61,6 +63,7 @@ def save_json(path: Path, data: dict):
         json.dump(data, f, indent=4)
 
     log.info(f"json file saved at: {path}")
+
 
 @ensure_annotations
 def load_json(path: Path) -> ConfigBox:
@@ -78,6 +81,7 @@ def load_json(path: Path) -> ConfigBox:
     log.info(f"json file loaded succesfully from: {path}")
     return ConfigBox(content)
 
+
 @ensure_annotations
 def save_bin(data: Any, path: Path):
     """save binary file
@@ -88,6 +92,7 @@ def save_bin(data: Any, path: Path):
     """
     joblib.dump(value=data, filename=path)
     log.info(f"binary file saved at: {path}")
+
 
 @ensure_annotations
 def load_bin(path: Path) -> Any:

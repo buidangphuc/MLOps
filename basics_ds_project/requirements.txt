@@ -13,3 +13,7 @@ types-PyYAML
 Flask
 Flask-Cors
 loguru
+ruff
+isort
+pyink
+
