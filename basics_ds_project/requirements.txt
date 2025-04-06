@@ -10,10 +10,10 @@ tqdm
 ensure
 joblib
 types-PyYAML
-Flask
-Flask-Cors
+fastapi
+uvicorn
 loguru
 ruff
 isort
 pyink
-
+python-multipart
