@@ -1,4 +1,3 @@
-
 import pandas as pd
 
 from src.datascience.entity.config_entity import DataValidationConfig
