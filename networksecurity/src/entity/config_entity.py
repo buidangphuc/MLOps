@@ -5,7 +5,6 @@ from src.constant import training_pipeline
 
 
 class TrainingPipelineConfig:
-
     def __init__(self, timestamp=datetime.now()):
         timestamp = timestamp.strftime("%m_%d_%Y_%H_%M_%S")
         self.pipeline_name = training_pipeline.PIPELINE_NAME
@@ -16,7 +15,6 @@ class TrainingPipelineConfig:
 
 
 class DataIngestionConfig:
-
     def __init__(self, training_pipeline_config: TrainingPipelineConfig):
         self.data_ingestion_dir: str = os.path.join(
             training_pipeline_config.artifact_dir,
@@ -45,7 +43,6 @@ class DataIngestionConfig:
 
 
 class DataValidationConfig:
-
     def __init__(self, training_pipeline_config: TrainingPipelineConfig):
         self.data_validation_dir: str = os.path.join(
             training_pipeline_config.artifact_dir,
@@ -77,7 +74,6 @@ class DataValidationConfig:
 
 
 class DataTransformationConfig:
-
     def __init__(self, training_pipeline_config: TrainingPipelineConfig):
         self.data_transformation_dir: str = os.path.join(
             training_pipeline_config.artifact_dir,
@@ -101,7 +97,6 @@ class DataTransformationConfig:
 
 
 class ModelTrainerConfig:
-
     def __init__(self, training_pipeline_config: TrainingPipelineConfig):
         self.model_trainer_dir: str = os.path.join(
             training_pipeline_config.artifact_dir,

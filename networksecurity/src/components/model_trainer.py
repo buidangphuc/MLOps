@@ -33,7 +33,6 @@ os.environ["MLFLOW_TRACKING_PASSWORD"] = ""
 
 
 class ModelTrainer:
-
     def __init__(
         self,
         model_trainer_config: ModelTrainerConfig,

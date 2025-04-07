@@ -17,7 +17,6 @@ ca = certifi.where()
 
 
 class NetworkDataExtract:
-
     def __init__(self):
         try:
             pass

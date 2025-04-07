@@ -20,7 +20,6 @@ MONGODB_URI = os.getenv("MONGODB_URI")
 
 
 class DataIngestion:
-
     def __init__(self, data_ingestion_config: DataIngestionConfig):
         try:
             self.data_ingestion_config = data_ingestion_config

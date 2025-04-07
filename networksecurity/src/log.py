@@ -9,7 +9,6 @@ from loguru import logger
 
 
 class InterceptHandler(logging.Handler):
-
     def emit(self, record):
         # Get corresponding Loguru level if it exists
         try:
@@ -34,7 +33,6 @@ LOG_STDERR_FILENAME = "stderr.log"
 
 
 class Logger:
-
     def __init__(self):
         self.log_path = LOG_DIR
 
