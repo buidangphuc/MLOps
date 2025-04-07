@@ -1,9 +1,11 @@
 import sys
 
+from src.cloud.s3_syncer import S3Sync
 from src.components.data_ingestion import DataIngestion
 from src.components.data_transformation import DataTransformation
 from src.components.data_validation import DataValidation
 from src.components.model_trainer import ModelTrainer
+from src.constant.training_pipeline import TRAINING_BUCKET_NAME
 from src.entity.artifact_entity import (
     DataIngestionArtifact,
     DataTransformationArtifact,
@@ -19,8 +21,6 @@ from src.entity.config_entity import (
 )
 from src.exception.exception import NetworkSecurityException
 from src.log import log
-from src.cloud.s3_syncer import S3Sync
-from src.constant.training_pipeline import TRAINING_BUCKET_NAME
 
 
 class TrainingPipeline:
@@ -135,7 +135,7 @@ class TrainingPipeline:
             model_trainer_artifact = self.start_model_trainer(
                 data_transformation_artifact=data_transformation_artifact
             )
-            
+
             self.sync_artifact_dir_to_s3()
             self.sync_saved_model_dir_to_s3()
             log.info("Training pipeline completed successfully")
