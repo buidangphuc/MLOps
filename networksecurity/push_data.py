@@ -2,21 +2,18 @@ import json
 import os
 import sys
 
-from dotenv import load_dotenv
-load_dotenv()
 import certifi
 import pandas as pd
 import pymongo
+from dotenv import load_dotenv
 
 from src.exception.exception import NetworkSecurityException
 
+# Load environment variables
+load_dotenv()
 
 MONGODB_URI = os.getenv("MONGODB_URI")
-
-
 ca = certifi.where()
-
-
 
 
 class NetworkDataExtract:
