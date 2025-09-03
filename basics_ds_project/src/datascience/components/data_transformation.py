@@ -3,7 +3,7 @@ import os
 import pandas as pd
 from sklearn.model_selection import train_test_split
 
-from src.datascience import logger
+from src.datascience import log
 from src.datascience.entity.config_entity import DataTransformationConfig
 
 
@@ -23,9 +23,9 @@ class DataTransformation:
         train.to_csv(os.path.join(self.config.root_dir, "train.csv"), index=False)
         test.to_csv(os.path.join(self.config.root_dir, "test.csv"), index=False)
 
-        logger.info("Splited data into training and test sets")
-        logger.info(train.shape)
-        logger.info(test.shape)
+        log.info("Splited data into training and test sets")
+        log.info(train.shape)
+        log.info(test.shape)
 
         print(train.shape)
         print(test.shape)
