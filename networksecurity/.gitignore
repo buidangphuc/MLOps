@@ -5,3 +5,5 @@
 mlruns/
 
 src/logs/
+
+*.csv
