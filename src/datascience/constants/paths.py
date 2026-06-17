@@ -30,6 +30,9 @@ MODEL_DIR = TRAINER_DIR / "model"
 CKPT_DIR = TRAINER_DIR / "checkpoints"
 EVAL_DIR = ARTIFACTS / "model_evaluation"
 METRICS_FILE = EVAL_DIR / "metrics.json"
+REFERENCE_PROFILE = EVAL_DIR / "reference_profile.json"   # drift-monitor baseline (from eval)
+MONITOR_DIR = ARTIFACTS / "monitoring"
+MONITOR_REPORT = MONITOR_DIR / "report.json"
 REGISTRY_DIR = ARTIFACTS / "registry"
 RUN_STATUS = ARTIFACTS / "run_status.json"
 LOG_DIR = PROJECT_ROOT / "logs"
@@ -49,5 +52,5 @@ MLFLOW_URI = f"sqlite:///{PROJECT_ROOT / 'mlflow.db'}"
 
 
 def ensure_dirs() -> None:
-    for d in (DATA_DIR, VALID_DIR, SPLIT_DIR, TRAINER_DIR, CKPT_DIR, EVAL_DIR, REGISTRY_DIR, LOG_DIR, TUNE_DIR, OPTIMIZED_DIR, BUNDLE_DIR):
+    for d in (DATA_DIR, VALID_DIR, SPLIT_DIR, TRAINER_DIR, CKPT_DIR, EVAL_DIR, REGISTRY_DIR, LOG_DIR, TUNE_DIR, MONITOR_DIR, OPTIMIZED_DIR, BUNDLE_DIR):
         d.mkdir(parents=True, exist_ok=True)

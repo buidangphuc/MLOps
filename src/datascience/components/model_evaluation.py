@@ -115,6 +115,19 @@ class ModelEvaluation:
         atomic_write_json(paths.METRICS_FILE, result)
         log.info(f"metrics saved -> {paths.METRICS_FILE}")
 
+        # Reference profile for drift monitoring (no labels needed at monitor time):
+        # predicted-label distribution + mean confidence + input length, on test.
+        import collections
+
+        counts = collections.Counter(id2label[int(p)] for p in y_pred)
+        reference = {
+            "n": len(test_rows),
+            "label_dist": {k: v / len(y_pred) for k, v in counts.items()},
+            "mean_confidence": float(probs.max(axis=1).mean()),
+            "char_len_mean": float(np.mean([len(r[cfg.text_field]) for r in test_rows])),
+        }
+        atomic_write_json(paths.REFERENCE_PROFILE, reference)
+
     def _slices(self, rows, y_true, y_pred, field):
         from sklearn.metrics import f1_score
 

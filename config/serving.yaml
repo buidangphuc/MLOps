@@ -33,7 +33,16 @@ local:
 # traffic_file -> `analyze` replays them while Model Analyzer sweeps the config and picks the
 # best under the latency budget. Run on a prod-class GPU host (matches sagemaker.instance_type).
 analyze:
-  traffic_file: null             # JSONL of REAL captured requests ({"text": ...} per line)
+  traffic_file: null             # REAL captured requests JSONL ({"text": ...}) = accurate config;
+                                 # null = built-in MOCK traffic (approximate, for an initial tune)
   latency_budget_ms: 50          # p99 ceiling; configs above are dropped
   max_instance_count: 4          # search GPU instance_group count up to N
   max_batch_size: 64             # search dynamic_batching / max_batch_size up to N
+
+# `monitor` — drift detection (warn-only, no labels). Compares captured prod inputs against the
+# reference profile saved at eval. Does NOT retrain/gate — that needs labels + lifecycle (deferred).
+monitor:
+  traffic_file: null             # captured prod inputs (JSONL {"text": ...}); same idea as analyze
+  psi_warn: 0.2                  # predicted-label distribution drift (PSI): >0.1 moderate, >0.25 large
+  confidence_drop_warn: 0.1      # drop in mean max-softmax confidence vs reference
+  length_change_warn: 0.5        # relative change in mean input length vs reference

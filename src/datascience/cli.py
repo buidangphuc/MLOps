@@ -51,6 +51,7 @@ def build_parser() -> argparse.ArgumentParser:
     bn = sub.add_parser("bench", help="benchmark inference latency/throughput (one config)")
     bn.add_argument("--target", choices=["local", "triton"], default="local")
     sub.add_parser("analyze", help="sweep Triton configs with Model Analyzer (prod-class GPU host)")
+    sub.add_parser("monitor", help="drift check on captured prod traffic vs the eval reference (warn-only)")
 
     return p
 
@@ -130,6 +131,10 @@ def main(argv=None):
         from src.datascience.serve_analyzer import analyze
 
         analyze()
+    elif cmd == "monitor":
+        from src.datascience.monitor import monitor
+
+        monitor()
 
 
 if __name__ == "__main__":

@@ -49,6 +49,7 @@ your data).
 | `serve` | run an endpoint (`--backend local` or `triton`) |
 | `deploy` | deploy to a SageMaker Triton endpoint |
 | `bench` · `analyze` | measure one serving config · sweep configs (Model Analyzer) |
+| `monitor` | drift check on captured prod traffic vs the eval reference (warn-only) |
 
 `--gpu N` on any stage sets `CUDA_VISIBLE_DEVICES`. `dvc repro` runs the same DAG with caching.
 
@@ -82,7 +83,8 @@ Tracking is local MLflow: `mlflow ui --backend-store-uri sqlite:///mlflow.db`.
 ## Status
 
 Built + verified: full pipeline, tuning loop (`tune`/`promote` with lineage), torch & ONNX serving,
-local FastAPI/ONNX-Runtime. Triton / SageMaker / GPU paths run on a CUDA box. **Deferred:** lifecycle
-stages (staging/prod + rollback), production monitoring (drift + retrain), CI/CD.
+local FastAPI/ONNX-Runtime, drift monitoring (`monitor`, warn-only). Triton / SageMaker / GPU paths run
+on a CUDA box. **Deferred:** lifecycle stages (staging/prod + rollback), the *action* half of monitoring
+(retrain trigger + live quality gate — needs labels), CI/CD.
 
 Conventions for editing the code live in [CLAUDE.md](CLAUDE.md).

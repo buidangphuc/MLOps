@@ -39,6 +39,18 @@ def compute_scalar_metrics(names, y_true, y_pred, probs=None) -> dict:
     return out
 
 
+def population_stability_index(ref: dict, cur: dict, eps: float = 1e-6) -> float:
+    """PSI between two label-fraction distributions (drift signal). Rule of thumb:
+    <0.1 no shift · 0.1–0.25 moderate · >0.25 significant."""
+    keys = set(ref) | set(cur)
+    psi = 0.0
+    for k in keys:
+        r = max(ref.get(k, 0.0), eps)
+        c = max(cur.get(k, 0.0), eps)
+        psi += (c - r) * np.log(c / r)
+    return float(psi)
+
+
 def per_class_report(y_true, y_pred, id2label):
     from sklearn.metrics import confusion_matrix, precision_recall_fscore_support
 

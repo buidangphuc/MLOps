@@ -66,8 +66,9 @@ Human overview, the pipeline diagram, and the command list: see [README.md](READ
 - **Serving runtime** `serving.runtime`: `torch` (DEFAULT, serves the trained model directly) vs `onnx`
   (opt-in; run `optimize`+`package` first). ONNX is never automatic — convert only when enabled.
 - **`analyze` ≠ `tune`.** `tune/` tunes the MODEL (offline, pre-deploy). `serve_analyzer.py` (`analyze`)
-  tunes SERVING PARAMS with Model Analyzer, POST-deploy, against REAL traffic
-  (`serving.analyze.traffic_file`) on a prod-class GPU host. `bench` measures one config; `analyze` sweeps+picks.
+  tunes SERVING PARAMS with Model Analyzer on a prod-class GPU host. Traffic = `serving.analyze.traffic_file`
+  (real captured → accurate config) or null → built-in MOCK (approximate, for an initial/pre-deploy tune).
+  `bench` measures one config; `analyze` sweeps+picks.
 - **The tuning loop clears `CKPT_DIR`** before each variant and on finish — else auto-resume loads a
   mismatched checkpoint into a later `train`.
 - **Tracking**: MLflow is the default and overlays variants for comparison. TensorBoard is opt-in
@@ -76,8 +77,12 @@ Human overview, the pipeline diagram, and the command list: see [README.md](READ
 - **Tuning ladder** (climb only when eval demands): R1 backbone · R2 data + `sanity` · R3 recipe
   (`tuning.freeze_encoder_layers` / `differential_lr`) · R4 DAPT (`dapt`) · R5 LoRA. R4/R5 are
   off-by-default code paths for the GPU box.
+- **`monitor` is observe-only.** `monitor.py` compares captured prod traffic (`serving.monitor.traffic_file`)
+  against the `reference_profile.json` saved at eval — PSI on predicted-label dist + confidence drop +
+  length shift → WARN flags, no action. The reference needs no labels. The ACTION half (retrain / live
+  quality gate) is deferred because it needs ground-truth labels + lifecycle.
 
 ## Deferred (not built — don't assume these exist)
 
-Lifecycle stages (staging/prod profiles + promote/rollback), production monitoring (drift + retrain
-trigger), CI/CD.
+Lifecycle stages (staging/prod profiles + promote/rollback), the action half of monitoring (retrain
+trigger + live quality gate — needs labels), CI/CD. Note: `tests/` is NOT git-tracked yet — `git add tests/`.

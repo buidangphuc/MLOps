@@ -20,6 +20,17 @@ from src.datascience.constants import paths
 from src.datascience.utils.io import read_jsonl
 
 
+# Varied-length stand-in traffic for an initial/pre-deploy tune (replace with real captured traffic).
+_MOCK_TRAFFIC = [
+    "Stocks rallied today",
+    "The central bank raised interest rates amid persistent inflation concerns across global markets",
+    "New smartphone launched",
+    "Scientists discovered a distant exoplanet using the latest space telescope observations this week",
+    "Local team wins the cup",
+    "The government announced a sweeping reform package aimed at boosting economic growth over a decade",
+]
+
+
 def _ma_config(a, repo, perf_input) -> dict:
     """Build the NVIDIA Model Analyzer config: auto-search instance × batching for the
     ensemble under the p99 latency budget, driven by the real-traffic input file."""
@@ -46,17 +57,19 @@ def analyze():
     repo = paths.TRITON_REPO
     if not repo.exists():
         raise SystemExit("no model_repository — run `python main.py package --target triton` first")
-    if not a.get("traffic_file"):
-        raise SystemExit(
-            "set serving.analyze.traffic_file — real requests captured from the first deploy "
-            '({"text": ...} per line). Tune AFTER deploying, with real traffic, not synthetic.'
-        )
 
-    # replay the captured real requests through the ensemble (TEXT in) as perf_analyzer input
-    texts = [r["text"] for r in read_jsonl(Path(a.traffic_file), required_fields=["text"])]
+    # Feed the ensemble (TEXT in) with real captured traffic if available, else mock.
+    # Real traffic gives the accurate config (true length/load mix); mock = approximate,
+    # fine for an initial / pre-deploy tune on a mock GPU host.
+    if a.get("traffic_file"):
+        texts = [r["text"] for r in read_jsonl(Path(a.traffic_file), required_fields=["text"])]
+        log.info(f"replaying {len(texts)} real requests from {a.traffic_file}")
+    else:
+        texts = _MOCK_TRAFFIC
+        log.warning("no serving.analyze.traffic_file — tuning on MOCK traffic (approximate). "
+                    "Re-run with REAL captured traffic for an accurate config.")
     perf_input = paths.ARTIFACTS / "traffic_perf.json"
     perf_input.write_text(json.dumps({"data": [{"TEXT": [t]} for t in texts]}))
-    log.info(f"replaying {len(texts)} real requests from {a.traffic_file}")
 
     ma_config = _ma_config(a, repo, perf_input)
     cfg = paths.ARTIFACTS / "model_analyzer.yaml"
