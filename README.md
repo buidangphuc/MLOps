@@ -80,6 +80,31 @@ endpoint (text in → `{label, score}`); it holds no model internals.
 Artifact paths + the MLflow URI are fixed in `src/datascience/constants/paths.py` (not config).
 Tracking is local MLflow: `mlflow ui --backend-store-uri sqlite:///mlflow.db`.
 
+## Optional capabilities (opt-in)
+
+The core runs on defaults; everything below is **off unless you turn it on** (fastai-style — add a
+capability only when you have a concrete need).
+
+| Capability | Turn on | Notes |
+|---|---|---|
+| **TensorBoard** scalars | `tracking.tensorboard: true` | runs alongside MLflow |
+| **Weight/gradient histograms** (TB-only) | `tracking.log_histograms: true` | diagnose vanishing/exploding grads; `tensorboard --logdir logs/tensorboard` |
+| **R3 — freeze encoder layers** | `tuning.freeze_encoder_layers: N` | freeze embeddings + bottom N layers |
+| **R3 — differential LR** | `tuning.differential_lr: true` | lower LR for encoder, full for head |
+| **R5 — LoRA / PEFT** | `tuning.lora: true` (+ `lora_target_modules` for distilbert) | small adapters instead of full weights |
+| **R4 — DAPT** | `tuning.dapt.corpus: <jsonl>` → `python main.py dapt` | domain-adaptive pretraining → adapted backbone |
+| **Group-aware split** | `data.group_field: <field>` | no leakage across groups |
+| **Per-segment metrics** | `metrics.slice_field: <field>` | metrics per slice |
+| **Objective metric** | `metrics.objective` (`accuracy`/`macro_f1`/`micro_f1`/`pr_auc`/`mcc`) | drives best-model + gate |
+| **ONNX serving** (default torch) | `serving.runtime: onnx` | run `optimize`+`package` first; torch-free |
+| **INT8 quantization** | `serving.optimize.quantize: dynamic-int8` | ONNX path only |
+| **Triton config sweep** | `python main.py analyze` (+ `serving.analyze.traffic_file`) | real traffic = accurate; null = mock |
+| **Drift monitor** | `python main.py monitor` (+ `serving.monitor.traffic_file`) | warn-only; needs no labels |
+| **Remote registry** | `registry.remote.backend: mlflow\|sagemaker` | seam — not connected yet |
+
+Toggleable but **on by default** (turn off in config if unwanted): the quality `gate`, calibration,
+per-class report, error dump, bootstrap CI, leakage check.
+
 ## Status
 
 Built + verified: full pipeline, tuning loop (`tune`/`promote` with lineage), torch & ONNX serving,
