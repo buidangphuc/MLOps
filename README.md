@@ -1,109 +1,88 @@
-# Data Science Project Template
+# Text-Classification Fine-Tuning Pipeline
 
-This repository contains a template for building data science projects with standardized structure and workflow.
+A production-grade pipeline that fine-tunes a pretrained Hugging Face transformer for text
+classification, validates it like an expert (calibration, confidence intervals, per-class error
+analysis), **gates** it on a metric, **versions** it with full lineage, and **serves** it.
 
-## Requirements
+The **pipeline is the product** — generic via config, not tied to any one model or dataset.
+Philosophy (fastai-style): a minimal core that runs immediately with sane defaults; every advanced
+capability (DAPT, LoRA, TensorBoard histograms, ONNX serving) is **opt-in**.
 
-- Docker and Docker Compose
-- Python 3.12+
-- Poetry (Python dependency management tool)
-- Common DS libraries: pandas, numpy, scikit-learn, matplotlib, seaborn, jupyter
+## Pipeline
 
-## Repository Structure
+```
+ingest → validate (gate) → transform (stratified split + label map) → train (HF Trainer)
+       → evaluate (metrics + calibration + CI + error analysis) → gate → local registry
 
-```plaintext
-project/
-│
-├── artifacts/
-│   ├── data_ingestion/        # Stores raw input data collected from various sources.
-│   ├── data_transformation/    # Contains scripts and modules for data processing, e.g., normalization or transformations.
-│   ├── data_validation/        # Stores the results of data validation, ensuring data quality and consistency.
-│   └── model_evaluation/       # Contains evaluation results of models, including performance metrics and charts.
-│   └── model_trainer/          # Stores trained models, weights, and information related to the training process.
-│
-├── config/
-│   ├── config.yaml             # Configuration file containing project parameters such as file paths and settings.
-│   ├── params.yaml             # Configuration for training and preprocessing parameters.
-│   └── schema.yaml             # Describes the schema of the input data and any validation rules.
-│
-├── research/
-│   ├── 1_data_ingestion.ipynb  # Jupyter notebook for collecting and preprocessing input data.
-│   ├── 2_data_validation.ipynb # Jupyter notebook for data validation and quality checks.
-│   ├── 3_data_transformation.ipynb # Jupyter notebook for transforming the data into a usable format for the model.
-│   ├── 4_model_trainer.ipynb   # Jupyter notebook for training models using the processed data.
-│   └── 5_model_evaluation.ipynb # Jupyter notebook for evaluating the model’s performance.
-│
-├── scripts/
-│
-├── src/
-│   └── datascience/            # Source code for the data science pipeline.
-│       ├── components/         # Individual modules that represent parts of the data science pipeline (e.g., feature engineering, model evaluation).
-│       ├── config/             # Configuration files for pipeline setup.
-│       ├── constants/          # Contains constant values or parameters used throughout the pipeline.
-│       ├── entity/             # Defines the data entities used in the model (e.g., data schemas, models).
-│       ├── pipeline/           # Main pipeline for data ingestion, transformation, and model training.
-│       └── utils/              # Utility functions or scripts to support various parts of the project.
-│
-├── templates/              # API View for testing
-├── .gitignore              # Git ignore file to exclude certain files and directories from version control.
-├── app.py                  # Main application file for running the project.
-├── main.py                 # Entry point to the application or main logic of the project.
-├── README.md               # Project documentation explaining the setup, usage, and purpose.
-├── requirements.txt        # A list of dependencies required to run the project.
+tuning loop:  experiments.yaml (variants) → tune (train+eval+rank, 1 MLflow run each) → promote <winner>
+serving:      torch (default)   or   optimize → package → serve / deploy  (Triton + SageMaker)
 ```
 
-## Running the Application
+## Quickstart
 
-### Using Docker Compose (Recommended)
-
-1. Clone the repository:
 ```bash
-git clone <repository-url>
-cd <repository-directory>
+pip install -r requirements-dev.txt          # dev / training stack
+
+python main.py run                            # full pipeline (downloads a sample dataset on first run)
+python main.py infer --text "Central bank raises interest rates"
+python main.py serve --backend local --port 8080   # FastAPI endpoint: text -> {label, score}
 ```
 
-2. Start the development environment:
-```bash
-docker-compose -f docker-compose.local.yml up -d
-```
+Use your own data: set `ingestion.dataset_name: null` in `config/params.yaml` and drop a
+`{"text": ..., "label": ...}` JSONL at `artifacts/data_ingestion/data.jsonl`. Any binary or
+multi-class text classification works without code changes (label map + metrics are derived from
+your data).
 
-This will start all necessary services (Jupyter, database, etc.) in development mode.
+## Commands
 
-3. Access the services:
-   - Jupyter Lab: http://localhost:8888
-   - API: http://localhost:8000
-   - MLflow UI (if configured): http://localhost:5000
+| Command | What it does |
+|---|---|
+| `run` | full pipeline (slice with `--only` / `--from` / `--to`) |
+| `ingest` · `validate` · `transform` · `train` · `eval` | a single stage |
+| `sanity` | pre-flight: overfit-one-batch + loss@init |
+| `tune` | train+eval+rank the variants in `experiments.yaml` |
+| `promote <variant>` | gate-check + version the chosen variant (with lineage) |
+| `dapt` | R4 domain-adaptive pretraining → adapted backbone (GPU box) |
+| `infer` | predict `--text` or batch over `--input-file` (JSONL, resumable) |
+| `optimize` | (opt-in) export the trained model to ONNX |
+| `package` | build a deployable bundle or a Triton model repository |
+| `serve` | run an endpoint (`--backend local` or `triton`) |
+| `deploy` | deploy to a SageMaker Triton endpoint |
+| `bench` · `analyze` | measure one serving config · sweep configs (Model Analyzer) |
 
-4. Stop the services:
-```bash
-docker-compose -f docker-compose.local.yml down
-```
+`--gpu N` on any stage sets `CUDA_VISIBLE_DEVICES`. `dvc repro` runs the same DAG with caching.
 
-### Manual Setup
+## Architecture
 
-1. Install Poetry:
-```bash
-pip install poetry
-```
+Three layers: **(1) Pipeline** — one config → one reproducible result · **(2) Tuning** — a loop over
+variants, ranked + promoted with lineage · **(3) Lifecycle** (planned) — staging/prod profiles +
+promote/rollback.
 
-2. Install dependencies:
-```bash
-poetry install
-```
+Two repos, boundary = the deployed endpoint. **This repo = all core AI** (data → train → tune → eval
+→ optimize → package → serve/deploy). A business app (e.g. `fastapi_template`) only **calls** the
+endpoint (text in → `{label, score}`); it holds no model internals.
 
-3. Set up environment variables:
-```bash
-cp .env.example .env
-```
+## Install profiles
 
-4. Start Jupyter Lab:
-```bash
-poetry run jupyter lab
-```
+| Use | Install |
+|---|---|
+| Dev / training | `pip install -r requirements-dev.txt` |
+| Serving — torch (default) | the model stack (torch + transformers; = the dev install) |
+| Serving — ONNX (opt-in, torch-free) | `requirements.txt` + `requirements-cpu.txt` (CPU) **or** `requirements-gpu.txt` (GPU) |
 
-### Environment Variables
+## Config (`config/`)
 
-Key environment variables include:
+- `params.yaml` — the base experiment: data, model, training, metrics, gate, tracking, registry (+ an off-by-default `tuning:` block).
+- `experiments.yaml` — the tuning loop: named variants (sparse overrides on `params.yaml`).
+- `serving.yaml` — serving lifecycle: runtime, optimize, triton, sagemaker, analyze.
 
-- `MODEL_REGISTRY`: Path to model registry
-- `MLFLOW_TRACKING_URI`: URI for MLflow tracking server
+Artifact paths + the MLflow URI are fixed in `src/datascience/constants/paths.py` (not config).
+Tracking is local MLflow: `mlflow ui --backend-store-uri sqlite:///mlflow.db`.
+
+## Status
+
+Built + verified: full pipeline, tuning loop (`tune`/`promote` with lineage), torch & ONNX serving,
+local FastAPI/ONNX-Runtime. Triton / SageMaker / GPU paths run on a CUDA box. **Deferred:** lifecycle
+stages (staging/prod + rollback), production monitoring (drift + retrain), CI/CD.
+
+Conventions for editing the code live in [CLAUDE.md](CLAUDE.md).

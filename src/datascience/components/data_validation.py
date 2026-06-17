@@ -1,33 +1,34 @@
-import pandas as pd
+from collections import Counter
 
+from src.datascience import log
+from src.datascience.constants import paths
 from src.datascience.entity.config_entity import DataValidationConfig
+from src.datascience.utils.io import atomic_write_text, read_jsonl
 
 
-class DataValiadtion:
+class DataValidation:
 
     def __init__(self, config: DataValidationConfig):
         self.config = config
 
-    def validate_all_columns(self) -> bool:
-        try:
-            validation_status = None
+    def validate(self) -> bool:
+        """Gate: data must have the text/label fields, non-empty text, non-null label.
+        Writes STATUS_FILE so downstream can refuse to proceed on failure."""
+        rows = read_jsonl(paths.RAW_DATA)
+        tf, lf = self.config.text_field, self.config.label_field
 
-            data = pd.read_csv(self.config.unzip_data_dir)
-            all_cols = list(data.columns)
+        missing = sum(1 for r in rows if tf not in r or lf not in r)
+        empty_text = sum(1 for r in rows if not str(r.get(tf, "")).strip())
+        null_label = sum(1 for r in rows if r.get(lf) in (None, ""))
+        status = missing == 0 and empty_text == 0 and null_label == 0
 
-            all_schema = self.config.all_schema.keys()
+        atomic_write_text(paths.STATUS_FILE, f"Validation status: {status}")
 
-            for col in all_cols:
-                if col not in all_schema:
-                    validation_status = False
-                    with open(self.config.STATUS_FILE, "w") as f:
-                        f.write(f"Validation status: {validation_status}")
-                else:
-                    validation_status = True
-                    with open(self.config.STATUS_FILE, "w") as f:
-                        f.write(f"Validation status: {validation_status}")
-
-            return validation_status
-
-        except Exception as e:
-            raise e
+        if status:
+            counts = Counter(r[lf] for r in rows)
+            log.info(f"validation passed | {len(rows)} rows | class counts: {dict(counts)}")
+        else:
+            log.warning(
+                f"validation FAILED | missing_field={missing} empty_text={empty_text} null_label={null_label}"
+            )
+        return status

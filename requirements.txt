@@ -1,18 +1,10 @@
-dvc
-mlflow
-pandas
-numpy
-scikit-learn
-matplotlib
-joblib
-pyYAML
-python-box
-tqdm
+# PROD / serving runtime BASE (torch-free). onnxruntime is NOT here because the CPU and
+# GPU wheels are mutually exclusive — enable exactly one on top:
+#   CPU (local / CPU prod):  pip install -r requirements-cpu.txt
+#   GPU (prod GPU host):     pip install -r requirements-gpu.txt
+transformers         # AutoTokenizer at serve time (no torch needed for tokenization)
 fastapi
 uvicorn
+prometheus-client
+numpy
 loguru
-ruff
-isort
-pyink
-types-PyYAML
-python-multipart

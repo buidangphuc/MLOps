@@ -1,0 +1,10 @@
+services:
+  triton:
+    image: nvcr.io/nvidia/tritonserver:24.08-py3
+    # GPU box: uncomment ->
+    # deploy: { resources: { reservations: { devices: [{ capabilities: [gpu] }] } } }
+    ports: ["8000:8000", "8001:8001", "8002:8002"]
+    volumes:
+      - ../../artifacts/model_repository:/models
+    command: >
+      bash -lc "pip install -q transformers && tritonserver --model-repository=/models"
