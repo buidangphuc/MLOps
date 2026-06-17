@@ -1,0 +1,39 @@
+# DEV / training / experimentation / ops — everything beyond the prod serving runtime.
+# Includes the CPU serving runtime (local dev runs ONNX on CPU).
+-r requirements-cpu.txt
+
+# training
+torch
+datasets
+accelerate
+scikit-learn
+peft                 # R5 LoRA / PEFT
+tensorboard          # opt-in TB scalar logs + histograms
+
+# tracking + data versioning
+mlflow
+dvc
+
+# optimize / package (ONNX export)
+optimum[onnxruntime]
+
+# pipeline utils
+pandas
+pyYAML
+python-box
+ensure
+tqdm
+joblib
+matplotlib
+
+# test + secret-leak guard (no lint/format tooling)
+pytest
+pre-commit           # runs the detect-secrets hook in .pre-commit-config.yaml
+detect-secrets
+
+# GPU / cloud ops (run on the GPU box / AWS)
+tritonclient[http]    # perf_analyzer client
+triton-model-analyzer # `analyze` config sweep
+boto3
+sagemaker
+pynvml

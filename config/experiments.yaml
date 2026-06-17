@@ -1,0 +1,36 @@
+# The tuning LOOP (Layer 2). Each variant is a sparse override deep-merged onto
+# params.yaml — so a variant only states what it changes. Run:
+#
+#   python main.py tune              # train+eval every variant, rank by metrics.objective
+#   python main.py promote <name>    # version the chosen variant into the registry
+#
+# Every variant trains+evals through the SAME Layer-1 pipeline and is logged as its own
+# MLflow run (tagged variant=<name>), so they compare side by side. Nothing is promoted
+# automatically — you pick the winner after reading the ranking.
+
+experiment_name: text-clf-tuning
+
+variants:
+  - name: baseline                 # params.yaml as-is
+
+  - name: freeze-bottom6           # R3: freeze embeddings + bottom 6 layers
+    tuning:
+      freeze_encoder_layers: 6
+
+  - name: differential-lr          # R3: low LR for the encoder, full LR for the head
+    tuning:
+      differential_lr: true
+      encoder_lr: 1.0e-5
+
+  # - name: roberta                # R1: swap the backbone (downloads weights)
+  #   model:
+  #     base_model: roberta-base
+
+  # - name: dapt-then-finetune     # R4: fine-tune from the DAPT-adapted backbone
+  #   model:                       #     (run `python main.py dapt` first)
+  #     base_model: artifacts/dapt
+
+  # - name: lora                   # R5: train LoRA adapters instead of full weights
+  #   tuning:
+  #     lora: true
+  #     lora_target_modules: [q_lin, v_lin]   # distilbert attn projections (auto for bert/roberta/...)

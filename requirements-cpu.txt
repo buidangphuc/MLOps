@@ -1,0 +1,3 @@
+# Serving runtime — CPU wheel (local dev / CPU prod).
+-r requirements.txt
+onnxruntime

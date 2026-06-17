@@ -1,0 +1,3 @@
+# Serving runtime — GPU wheel (prod GPU host). Mutually exclusive with onnxruntime (CPU).
+-r requirements.txt
+onnxruntime-gpu

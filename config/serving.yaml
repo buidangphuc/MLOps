@@ -1,0 +1,39 @@
+# Serving / inference config (Phase 2) — read by optimize/package/serve/deploy/bench.
+# Separate from params.yaml because it belongs to a different lifecycle (it's versioned
+# with the deployed endpoint, not with a training experiment). Target GPU = Ampere+.
+
+# Serving runtime:
+#   torch (default) — serve the trained model directly, NO conversion (needs the model stack)
+#   onnx  (opt-in)  — run `optimize` + `package` first; torch-free ONNX Runtime (lightweight/portable)
+runtime: torch
+
+optimize:
+  quantize: none           # none | dynamic-int8  (fp32 ONNX is the portable default)
+
+triton:
+  max_batch_size: 32
+  preferred_batch_sizes: [8, 16, 32]
+  max_queue_delay_us: 5000
+  instance_count: 1
+  device: gpu              # gpu | cpu  (cpu = local docker on a non-GPU box)
+  precision: fp16          # fp16 | fp32 | int8   (fp16 = good default on Ampere+)
+
+sagemaker:
+  instance_type: ml.g5.xlarge
+  s3_bucket: null
+  region: ap-southeast-1
+  triton_image: null       # region-specific SageMaker Triton DLC URI (see AWS docs)
+  role_arn: null           # SageMaker execution role
+
+local:
+  port: 8080
+
+# `analyze` (serve_analyzer.py) — POST-DEPLOY serving-param tuning, driven by REAL traffic.
+# Workflow: deploy with defaults -> capture real requests from the live endpoint into
+# traffic_file -> `analyze` replays them while Model Analyzer sweeps the config and picks the
+# best under the latency budget. Run on a prod-class GPU host (matches sagemaker.instance_type).
+analyze:
+  traffic_file: null             # JSONL of REAL captured requests ({"text": ...} per line)
+  latency_budget_ms: 50          # p99 ceiling; configs above are dropped
+  max_instance_count: 4          # search GPU instance_group count up to N
+  max_batch_size: 64             # search dynamic_batching / max_batch_size up to N

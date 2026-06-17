@@ -1,3 +1,90 @@
-ElasticNet:
-  alpha: 0.2
-  l1_ratio: 0.1
+# Base EXPERIMENT config: data + model + training + metrics + gate + tracking + registry
+# + an off-by-default `tuning:` block. One run of `train` = one experiment; MLflow
+# versions its hyperparams + metrics. Vary these PER-VARIANT in experiments.yaml and
+# run `tune` to compare. Serving knobs live in serving.yaml; paths in constants/paths.py.
+
+ingestion:
+  dataset_name: ag_news      # HF dataset pulled as a sample for first run.
+  sample_size: 3000          # null = full split. To use your own data: set
+                             # dataset_name: null and drop a JSONL at artifacts/data_ingestion/data.jsonl
+
+data:
+  text_field: text
+  label_field: label
+  val_size: 0.15             # validation (early-stop / model selection)
+  test_size: 0.15            # held-out test (touched once, at evaluation)
+  seed: 42
+  leakage_check: true        # drop text exactly duplicated across splits
+  group_field: null          # set a field to prevent group leakage (opt-in)
+
+model:
+  base_model: distilbert-base-uncased   # fine-tune from pretrained (not from scratch)
+  max_length: 128
+
+training:
+  epochs: 2
+  lr: 5.0e-5
+  train_batch_size: 16
+  eval_batch_size: 32
+  weight_decay: 0.01
+  warmup_ratio: 0.1
+  patience: 2                # early stopping
+  save_total_limit: 2
+  seed: 42
+  max_steps: -1              # >0 caps steps (time-budget guard); -1 = use epochs
+  oom_auto_retry: true       # on OOM, halve batch size and retry once
+
+metrics:
+  compute: [accuracy, macro_f1, micro_f1]   # accuracy|macro_f1|micro_f1|pr_auc|mcc
+  objective: macro_f1        # best-model selection + gate reference
+  per_class: true            # per-class P/R/F1 + confusion matrix
+  error_dump: true           # write misclassified examples
+  bootstrap_ci: true         # metric +/- 95% CI on test
+  calibration: true          # ECE + temperature scaling (fit on val, saved)
+  slice_field: null          # opt-in: per-segment metrics by this field
+
+gate:
+  enabled: true
+  on_fail: error             # error (exit != 0) | warn
+  rules:
+    - {metric: macro_f1, min: 0.5}
+
+tracking:
+  backend: mlflow            # mlflow | tensorboard | none
+  experiment_name: text-clf
+  tensorboard: false         # also write TB scalar logs alongside the backend (-> logs/tensorboard)
+  log_histograms: false      # TB-only: weight + gradient histograms every N steps (debug convergence)
+
+registry:
+  name: TextClassifier
+  remote:
+    backend: none            # none | mlflow | sagemaker (remote not built yet)
+
+# ----------------------------------------------------------------------------
+# Tuning rungs (advanced). All off => plain fine-tune above. Climb a rung only when
+# eval signals demand it. To COMPARE rungs, set them per-variant in experiments.yaml
+# and run `python main.py tune` — don't hand-tweak here run after run.
+#   R1 backbone -> change model.base_model        R2 data -> fix labels + `sanity`
+#   R3 recipe (below)   R4 DAPT -> `python main.py dapt`   R5 LoRA (below)
+# ----------------------------------------------------------------------------
+tuning:
+  # R3 — training recipe (cheap, stabilises fine-tuning; verifiable on any box)
+  freeze_encoder_layers: 0   # >0 freezes embeddings + the bottom N transformer layers
+  differential_lr: false     # true = encoder uses encoder_lr, classifier head uses training.lr
+  encoder_lr: 1.0e-5         # lower LR for the pretrained encoder when differential_lr
+
+  # R5 — LoRA / PEFT (train small adapters instead of all weights; for big backbones)
+  lora: false                # true = wrap the model with LoRA adapters before training
+  lora_r: 8
+  lora_alpha: 16
+  lora_dropout: 0.05
+  lora_target_modules: null  # null = PEFT auto-picks (bert/roberta/gpt2/llama/...);
+                             # distilbert isn't auto-mapped -> set e.g. [q_lin, v_lin]
+
+  # R4 — DAPT (domain-adaptive pretraining). `python main.py dapt` continues masked-LM
+  # on your unlabeled domain text -> adapted backbone at artifacts/dapt; then point a
+  # variant's model.base_model to it. Heavy -> run on the GPU box.
+  dapt:
+    corpus: null             # JSONL with a `text` field (unlabeled domain text)
+    epochs: 1
+    mlm_probability: 0.15
