@@ -121,6 +121,11 @@ it only with **many models + sporadic traffic** (one endpoint, cheaper); a singl
 **SingleModel** (always warm, no cold-start). If you do go MME, keep tars **small** (ONNX, no bundled
 torch) — big tars make MME's on-demand model loads slow.
 
+**Serving image:** `Dockerfile.serve` packages the local FastAPI/ONNX server
+as a small torch-free container — the model bundle mounts at
+`/srv/artifacts/bundle`, so shipping a new model is a volume swap (or a
+`stage-path` re-point), never an image rebuild.
+
 **Reference-only paths:** `serve/triton.py` and `serve/deploy_sagemaker.py` are
 thin stubs sketching the GPU-box/AWS route — the implemented serving path is
 `serve` with the local FastAPI backend (torch or ONNX).

@@ -1,0 +1,36 @@
+# Model-serving image — torch-free, CPU (ONNX Runtime).
+# Separate from any API image on purpose: the model server deploys, scales
+# and rolls back independently; the model artifact mounts as a volume so a
+# new model needs NO image rebuild.
+#
+#   datascience optimize && datascience package            # build the bundle
+#   docker build -f Dockerfile.serve -t model-server .
+#   docker run -p 8080:8080 -v $PWD/artifacts/bundle:/srv/artifacts/bundle:ro model-server
+#
+# Registry-stage flow: mount the dir from `datascience stage-path <name> production`.
+
+FROM python:3.12-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    LOG_DIR=/tmp/logs
+
+WORKDIR /srv
+
+# Editable install keeps constants/paths.py resolving to /srv (the repo root
+# convention); [cpu] = base serving deps + onnxruntime — no torch.
+COPY pyproject.toml README.md ./
+COPY src ./src
+COPY config ./config
+RUN pip install --no-cache-dir -e .[cpu]
+
+RUN groupadd --system --gid 1001 app \
+    && useradd --system --uid 1001 --gid app --home-dir /srv --shell /sbin/nologin app
+USER app
+
+EXPOSE 8080
+
+HEALTHCHECK --interval=15s --timeout=5s --start-period=20s --retries=3 \
+    CMD python -c "import urllib.request, sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8080/health', timeout=3).status == 200 else 1)"
+
+CMD ["datascience", "serve", "--backend", "local", "--port", "8080"]
