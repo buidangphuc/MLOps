@@ -112,4 +112,10 @@ local FastAPI/ONNX-Runtime, drift monitoring (`monitor`, warn-only). Triton / Sa
 on a CUDA box. **Deferred:** lifecycle stages (staging/prod + rollback), the *action* half of monitoring
 (retrain trigger + live quality gate — needs labels), CI/CD.
 
+**Scaling note (optional, not built):** SageMaker **Multi-Model Endpoint (MME)** is a future *deploy
+target*, not a pipeline change — run the pipeline N times → N self-contained tars → one MME. Reach for
+it only with **many models + sporadic traffic** (one endpoint, cheaper); a single steady model stays
+**SingleModel** (always warm, no cold-start). If you do go MME, keep tars **small** (ONNX, no bundled
+torch) — big tars make MME's on-demand model loads slow.
+
 Conventions for editing the code live in [CLAUDE.md](CLAUDE.md).
