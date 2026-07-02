@@ -46,6 +46,20 @@ def build_parser() -> argparse.ArgumentParser:
     sv = sub.add_parser("serve", help="run an inference endpoint")
     sv.add_argument("--backend", choices=["local", "triton"], default="local")
     sv.add_argument("--port", type=int, default=8080)
+    sv.add_argument("--stage", choices=["staging", "production"],
+                    help="serve the model this registry stage points at (default: packaged bundle)")
+
+    # model lifecycle: stage pointers on the local registry
+    ps = sub.add_parser("promote-stage", help="point staging/production at a registered version")
+    ps.add_argument("name", help="registry model name (registry.name in params.yaml)")
+    ps.add_argument("version", help="registered version, e.g. v3 (or 3)")
+    ps.add_argument("--to", dest="stage", choices=["staging", "production"], required=True)
+    rb = sub.add_parser("rollback", help="restore the previous version for a stage")
+    rb.add_argument("name")
+    rb.add_argument("--stage", choices=["staging", "production"], default="production")
+    sp = sub.add_parser("stage-path", help="print the model dir a stage points at (for deploy tooling)")
+    sp.add_argument("name")
+    sp.add_argument("stage", choices=["staging", "production"])
     dp = sub.add_parser("deploy", help="deploy to a managed endpoint")
     dp.add_argument("--target", choices=["sagemaker-triton"], default="sagemaker-triton")
     bn = sub.add_parser("bench", help="benchmark inference latency/throughput (one config)")
@@ -118,7 +132,13 @@ def main(argv=None):
         else:
             from datascience.serve.local import serve
 
-            serve(port=args.port)
+            bundle = None
+            if args.stage:
+                from datascience.config.configuration import ConfigurationManager
+                from datascience.registry.stages import stage_path
+
+                bundle = stage_path(ConfigurationManager().registry().name, args.stage)
+            serve(port=args.port, bundle=bundle)
     elif cmd == "deploy":
         from datascience.serve.deploy_sagemaker import deploy_sagemaker
 
@@ -135,6 +155,18 @@ def main(argv=None):
         from datascience.monitor import monitor
 
         monitor()
+    elif cmd == "promote-stage":
+        from datascience.registry.stages import assign_stage
+
+        assign_stage(args.name, args.version, args.stage)
+    elif cmd == "rollback":
+        from datascience.registry.stages import rollback
+
+        rollback(args.name, args.stage)
+    elif cmd == "stage-path":
+        from datascience.registry.stages import stage_path
+
+        print(stage_path(args.name, args.stage))
 
 
 if __name__ == "__main__":

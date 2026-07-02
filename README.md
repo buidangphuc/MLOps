@@ -50,6 +50,9 @@ your data).
 | `deploy` | deploy to a SageMaker Triton endpoint |
 | `bench` · `analyze` | measure one serving config · sweep configs (Model Analyzer) |
 | `monitor` | drift check on captured prod traffic vs the eval reference (warn-only) |
+| `promote-stage <name> <vN> --to staging\|production` | point a lifecycle stage at a registered version |
+| `rollback <name> --stage production` | restore the stage's previous version |
+| `stage-path <name> <stage>` | print the model dir a stage points at (deploy tooling) |
 
 `--gpu N` on any stage sets `CUDA_VISIBLE_DEVICES`. `dvc repro` runs the same DAG with caching.
 
