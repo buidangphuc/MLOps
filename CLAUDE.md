@@ -85,4 +85,4 @@ Human overview, the pipeline diagram, and the command list: see [README.md](READ
 ## Deferred (not built — don't assume these exist)
 
 Lifecycle stages (staging/prod profiles + promote/rollback), the action half of monitoring (retrain
-trigger + live quality gate — needs labels), CI/CD. Note: `tests/` is NOT git-tracked yet — `git add tests/`.
+trigger + live quality gate — needs labels), CI/CD.

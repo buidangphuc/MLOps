@@ -21,7 +21,7 @@ serving:      torch (default)   or   optimize → package → serve / deploy  (T
 ## Quickstart
 
 ```bash
-pip install -r requirements-dev.txt          # dev / training stack
+pip install -e .[dev,cpu]                    # dev / training stack (editable)
 
 python main.py run                            # full pipeline (downloads a sample dataset on first run)
 python main.py infer --text "Central bank raises interest rates"
@@ -117,5 +117,9 @@ target*, not a pipeline change — run the pipeline N times → N self-contained
 it only with **many models + sporadic traffic** (one endpoint, cheaper); a single steady model stays
 **SingleModel** (always warm, no cold-start). If you do go MME, keep tars **small** (ONNX, no bundled
 torch) — big tars make MME's on-demand model loads slow.
+
+**Reference-only paths:** `serve/triton.py` and `serve/deploy_sagemaker.py` are
+thin stubs sketching the GPU-box/AWS route — the implemented serving path is
+`serve` with the local FastAPI backend (torch or ONNX).
 
 Conventions for editing the code live in [CLAUDE.md](CLAUDE.md).
