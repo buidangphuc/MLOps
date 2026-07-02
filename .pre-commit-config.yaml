@@ -5,9 +5,9 @@ repos:
     hooks:
       - id: detect-secrets
         files: \.(json|ya?ml|toml|env(\.[^/]+)?|ini|cfg|py)$
-        exclude: |
-          (^tests?/fixtures?/)|(^docs?/)|(\.svg$)|(\.lock$)|(\.min\.(js|css)$)|
-          (^node_modules/)|(^venv/)|(^\.venv/)|(^dist/)|(^build/)|(^\.git/)
+        # single line: a YAML block here embeds newlines into the regex,
+        # silently disabling every alternative after the first line.
+        exclude: (^tests?/fixtures?/)|(^docs?/)|(\.svg$)|(\.lock$)|(\.min\.(js|css)$)|(^node_modules/)|(^venv/)|(^\.venv/)|(^dist/)|(^build/)|(^\.git/)|(^\.specify/integrations/)
         args:
           - --baseline
           - .secrets.baseline
