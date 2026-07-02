@@ -12,6 +12,7 @@ from datascience.entity.config_entity import (
     RegistryConfig,
     TuningConfig,
 )
+from datascience.config.validation import validate_gate, validate_split_sizes
 from datascience.utils.common import read_yaml
 
 _REQUIRED_SECTIONS = ["ingestion", "data", "model", "training", "metrics", "gate", "tracking", "registry"]
@@ -36,9 +37,7 @@ class ConfigurationManager:
         if missing:
             raise ValueError(f"params.yaml missing sections: {missing}")
 
-        d = self.params.data
-        if not (0 < d.val_size < 1 and 0 < d.test_size < 1 and d.val_size + d.test_size < 1):
-            raise ValueError("data.val_size/test_size must each be in (0,1) and sum < 1")
+        validate_split_sizes(self.params.data.val_size, self.params.data.test_size)
 
         m = self.params.metrics
         unknown = set(m.compute) - _VALID_METRICS
@@ -47,11 +46,7 @@ class ConfigurationManager:
         if m.objective not in m.compute:
             raise ValueError(f"metrics.objective '{m.objective}' must be one of metrics.compute {list(m.compute)}")
 
-        if self.params.gate.on_fail not in ("error", "warn"):
-            raise ValueError("gate.on_fail must be 'error' or 'warn'")
-        for r in self.params.gate.rules:
-            if "metric" not in r or "min" not in r:
-                raise ValueError(f"each gate rule needs 'metric' and 'min': {dict(r)}")
+        validate_gate(self.params.gate)
 
     def tracking_uri(self) -> str:
         # Env wins so CI/prod can point elsewhere; default is the fixed sqlite.

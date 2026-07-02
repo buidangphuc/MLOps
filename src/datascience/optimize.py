@@ -28,13 +28,9 @@ def optimize():
     AutoTokenizer.from_pretrained(paths.MODEL_DIR).save_pretrained(out)
 
     if quantize == "dynamic-int8":
-        from optimum.onnxruntime import ORTQuantizer
-        from optimum.onnxruntime.configuration import AutoQuantizationConfig
+        from datascience.utils.quantize import quantize_dynamic_int8
 
-        log.info("applying dynamic INT8 quantization")
-        quantizer = ORTQuantizer.from_pretrained(out)
-        qconfig = AutoQuantizationConfig.avx512_vnni(is_static=False, per_channel=False)
-        quantizer.quantize(save_dir=out, quantization_config=qconfig)
+        quantize_dynamic_int8(out)
 
     _reeval(cm, out)
     log.info(f"optimized model ready -> {out}")

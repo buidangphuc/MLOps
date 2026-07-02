@@ -1,34 +1,17 @@
-from collections import Counter
-
-from sklearn.model_selection import GroupShuffleSplit, train_test_split
+from sklearn.model_selection import train_test_split
 
 from datascience import log
 from datascience.constants import paths
 from datascience.entity.config_entity import DataTransformationConfig
 from datascience.utils.io import atomic_write_json, data_fingerprint, read_jsonl, write_jsonl
 
-
-def _can_stratify(labels) -> bool:
-    counts = Counter(labels)
-    return len(counts) >= 2 and min(counts.values()) >= 2
-
-
-def _group_split(rows, groups, test_size, seed):
-    gss = GroupShuffleSplit(n_splits=1, test_size=test_size, random_state=seed)
-    train_idx, test_idx = next(gss.split(rows, groups=groups))
-    return [rows[i] for i in train_idx], [rows[i] for i in test_idx]
-
-
-def _drop_cross_split_dups(train, val, test, text_field):
-    """Remove rows whose text already appears in an earlier split (keep in train)."""
-    seen = {r[text_field] for r in train}
-    val2 = [r for r in val if r[text_field] not in seen]
-    seen |= {r[text_field] for r in val2}
-    test2 = [r for r in test if r[text_field] not in seen]
-    dropped = (len(val) - len(val2)) + (len(test) - len(test2))
-    if dropped:
-        log.warning(f"leakage guard: dropped {dropped} rows with text duplicated across splits")
-    return train, val2, test2
+# Shared split helpers live in utils.split; keep the historical underscore
+# names as aliases so reference code (and tests) read the same as before.
+from datascience.utils.split import (
+    can_stratify as _can_stratify,
+    drop_cross_split_dups as _drop_cross_split_dups,
+    group_split as _group_split,
+)
 
 
 class DataTransformation:
