@@ -104,4 +104,4 @@ class GateConfig:
 @dataclass
 class RegistryConfig:
     name: str
-    remote_backend: str       # none | mlflow | sagemaker
+    remote_backend: str       # none | s3 (mlflow/sagemaker = open seam)

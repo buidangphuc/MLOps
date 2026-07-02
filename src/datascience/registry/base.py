@@ -14,14 +14,15 @@ from datascience import log
 from datascience.constants import paths
 from datascience.entity.config_entity import RegistryConfig
 from datascience.registry.local import LocalRegistry
+from datascience.registry.remote_s3 import S3Registry
 
 
 class RemoteRegistry(Protocol):
     def push(self, model_dir, metrics: dict, metadata: dict) -> str: ...
 
 
-# Seam: backend name -> factory(cfg) -> RemoteRegistry. Empty = nothing connected yet.
-_REMOTE_BACKENDS = {}  # e.g. {"mlflow": MlflowRegistry, "sagemaker": SageMakerRegistry}
+# Seam: backend name -> factory(cfg) -> RemoteRegistry.
+_REMOTE_BACKENDS = {"s3": S3Registry}  # e.g. also {"mlflow": MlflowRegistry}
 
 
 def register(model_dir, metrics: dict, metadata: dict, cfg: RegistryConfig) -> dict:

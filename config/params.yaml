@@ -58,7 +58,7 @@ tracking:
 registry:
   name: TextClassifier
   remote:
-    backend: none            # none | mlflow | sagemaker (remote not built yet)
+    backend: none   # none | s3 (REGISTRY_S3_BUCKET + S3_ENDPOINT_URL for MinIO)            # none | mlflow | sagemaker (remote not built yet)
 
 # ----------------------------------------------------------------------------
 # Tuning rungs (advanced). All off => plain fine-tune above. Climb a rung only when

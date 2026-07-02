@@ -34,8 +34,9 @@ edit** for a new task, NOT a configurable framework.
   config checks (split sizes, gate shape).
 - `src/datascience/registry/` — `local.py` (versioned catalog v1,v2… +
   `latest.json`), `stages.py` (**staging/production pointers + rollback**;
-  CLI `promote-stage`/`rollback`/`stage-path`), `base.py` (remote seam
-  `_REMOTE_BACKENDS` — empty, pluggable).
+  CLI `promote-stage`/`rollback`/`stage-path`), `base.py` +
+  `remote_s3.py` (remote push to S3/MinIO via `registry.remote.backend: s3`;
+  more backends plug into `_REMOTE_BACKENDS`).
 - `src/datascience/tune/` — `loop.py` (run+rank variants), `promote.py`
   (gate→registry+lineage), `dapt.py` (R4).
 - `src/datascience/serve/` — `local.py` (FastAPI, torch or ONNX; `--stage`
@@ -127,5 +128,5 @@ edit** for a new task, NOT a configurable framework.
 ## Deferred (not built — don't assume these exist)
 
 The action half of monitoring (retrain trigger + live quality gate — needs
-prod labels), CD (CI runs pytest only), remote registry backends
-(`_REMOTE_BACKENDS` is an empty seam).
+prod labels), CD (CI runs pytest only), additional remote registry
+backends beyond s3 (mlflow/sagemaker stay open seams in `_REMOTE_BACKENDS`).
