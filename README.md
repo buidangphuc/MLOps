@@ -70,9 +70,9 @@ endpoint (text in → `{label, score}`); it holds no model internals.
 
 | Use | Install |
 |---|---|
-| Dev / training | `pip install -r requirements-dev.txt` |
+| Dev / training | `pip install -e .[dev,cpu]` (editable; requirements*.txt are legacy pointers) |
 | Serving — torch (default) | the model stack (torch + transformers; = the dev install) |
-| Serving — ONNX (opt-in, torch-free) | `requirements.txt` + `requirements-cpu.txt` (CPU) **or** `requirements-gpu.txt` (GPU) |
+| Serving — ONNX (opt-in, torch-free) | `pip install '.[cpu]'` **or** `'.[gpu]'` (mutually exclusive onnxruntime wheels) |
 
 ## Config (`config/`)
 
