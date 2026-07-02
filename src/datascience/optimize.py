@@ -6,12 +6,12 @@ can eyeball the speed/quality trade-off. No hard gate (you decide).
 
 import numpy as np
 
-from src.datascience import log
-from src.datascience import metrics as M
-from src.datascience.config.configuration import ConfigurationManager
-from src.datascience.constants import paths
-from src.datascience.model import load_label_map
-from src.datascience.utils.io import read_jsonl
+from datascience import log
+from datascience import metrics as M
+from datascience.config.configuration import ConfigurationManager
+from datascience.constants import paths
+from datascience.model import load_label_map
+from datascience.utils.io import read_jsonl
 
 
 def optimize():

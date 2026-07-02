@@ -7,9 +7,9 @@ locally; this is the production deploy path you run on the GPU/AWS side.
 
 import tarfile
 
-from src.datascience import log
-from src.datascience.config.configuration import ConfigurationManager
-from src.datascience.constants import paths
+from datascience import log
+from datascience.config.configuration import ConfigurationManager
+from datascience.constants import paths
 
 
 def deploy_sagemaker():

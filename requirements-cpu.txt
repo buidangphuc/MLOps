@@ -1,3 +1,2 @@
-# Serving runtime — CPU wheel (local dev / CPU prod).
--r requirements.txt
-onnxruntime
+# Superseded by pyproject.toml — CPU serving runtime:
+.[cpu]

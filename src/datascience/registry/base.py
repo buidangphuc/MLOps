@@ -10,10 +10,10 @@ and register it in `_REMOTE_BACKENDS` below. Everything else stays the same.
 
 from typing import Protocol
 
-from src.datascience import log
-from src.datascience.constants import paths
-from src.datascience.entity.config_entity import RegistryConfig
-from src.datascience.registry.local import LocalRegistry
+from datascience import log
+from datascience.constants import paths
+from datascience.entity.config_entity import RegistryConfig
+from datascience.registry.local import LocalRegistry
 
 
 class RemoteRegistry(Protocol):

@@ -9,7 +9,7 @@ from box import ConfigBox
 from box.exceptions import BoxValueError
 from ensure import ensure_annotations
 
-from src.datascience import log
+from datascience import log
 
 
 @ensure_annotations  # ensure type hints are used

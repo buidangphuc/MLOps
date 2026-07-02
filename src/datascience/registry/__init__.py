@@ -1,4 +1,4 @@
-from src.datascience.registry.base import register
-from src.datascience.registry.local import LocalRegistry
+from datascience.registry.base import register
+from datascience.registry.local import LocalRegistry
 
 __all__ = ["register", "LocalRegistry"]

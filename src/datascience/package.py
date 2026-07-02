@@ -14,10 +14,10 @@ import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 
-from src.datascience import log
-from src.datascience.config.configuration import ConfigurationManager
-from src.datascience.constants import paths
-from src.datascience.model import load_label_map
+from datascience import log
+from datascience.config.configuration import ConfigurationManager
+from datascience.constants import paths
+from datascience.model import load_label_map
 
 
 def _git_sha():

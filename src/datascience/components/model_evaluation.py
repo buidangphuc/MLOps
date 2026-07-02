@@ -1,12 +1,12 @@
 import numpy as np
 
-from src.datascience import metrics as M
-from src.datascience import log
-from src.datascience.constants import paths
-from src.datascience.entity.config_entity import ModelEvaluationConfig
-from src.datascience.model import load_label_map, load_trained
-from src.datascience.utils.io import atomic_write_json, read_jsonl, write_jsonl
-from src.datascience.utils.runtime import pick_device, set_run_status
+from datascience import metrics as M
+from datascience import log
+from datascience.constants import paths
+from datascience.entity.config_entity import ModelEvaluationConfig
+from datascience.model import load_label_map, load_trained
+from datascience.utils.io import atomic_write_json, read_jsonl, write_jsonl
+from datascience.utils.runtime import pick_device, set_run_status
 
 
 class ModelEvaluation:

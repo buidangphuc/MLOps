@@ -10,14 +10,14 @@ import time
 
 import numpy as np
 
-from src.datascience import log
-from src.datascience.constants import paths
+from datascience import log
+from datascience.constants import paths
 
 _SAMPLE = "Central bank raises interest rates amid persistent inflation concerns"
 
 
 def bench_local(batch_sizes=(1, 8, 16, 32), iters_per_batch=50):
-    from src.datascience.serve.local import _load_model, _runtime
+    from datascience.serve.local import _load_model, _runtime
 
     model = _load_model()
     log.info(f"local bench (runtime={_runtime()})")

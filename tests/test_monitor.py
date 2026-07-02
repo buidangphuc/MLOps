@@ -1,6 +1,6 @@
 """Offline tests for the drift-monitor metric (PSI). The full monitor() path needs a model."""
 
-from src.datascience.metrics import population_stability_index
+from datascience.metrics import population_stability_index
 
 
 def test_psi_zero_when_identical():

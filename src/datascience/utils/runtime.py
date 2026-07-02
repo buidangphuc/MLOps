@@ -3,9 +3,9 @@
 import functools
 import time
 
-from src.datascience import log
-from src.datascience.constants import paths
-from src.datascience.utils.io import atomic_write_json
+from datascience import log
+from datascience.constants import paths
+from datascience.utils.io import atomic_write_json
 
 
 def set_seed(seed: int) -> None:

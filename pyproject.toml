@@ -1,0 +1,68 @@
+# Packaging for the pipeline. Editable install is the documented mode
+# (`pip install -e .[dev,cpu]`) — artifact paths in constants/paths.py resolve
+# relative to this repo root, which an editable install preserves.
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "datascience-pipeline"
+version = "0.1.0"
+description = "Text-classification fine-tuning pipeline: train, validate, gate, version, serve"
+readme = "README.md"
+requires-python = ">=3.10"
+# PROD / serving runtime BASE (torch-free). onnxruntime is NOT here because
+# the CPU and GPU wheels are mutually exclusive — pick exactly one extra.
+dependencies = [
+  "transformers",       # AutoTokenizer at serve time (no torch needed)
+  "fastapi",
+  "uvicorn",
+  "prometheus-client",
+  "numpy",
+  "loguru",
+]
+
+[project.optional-dependencies]
+# Serving runtime wheels — mutually exclusive:
+cpu = ["onnxruntime"]
+gpu = ["onnxruntime-gpu"]
+# DEV / training / experimentation / ops — everything beyond prod serving:
+dev = [
+  # training
+  "torch",
+  "datasets",
+  "accelerate",
+  "scikit-learn",
+  "peft",                  # R5 LoRA / PEFT
+  "tensorboard",           # opt-in TB scalar logs + histograms
+  # tracking + data versioning
+  "mlflow",
+  "dvc",
+  # optimize / package (ONNX export)
+  "optimum[onnxruntime]",
+  # pipeline utils
+  "pandas",
+  "pyYAML",
+  "python-box",
+  "ensure",
+  "tqdm",
+  "joblib",
+  "matplotlib",
+  # test + secret-leak guard (no lint/format tooling)
+  "pytest",
+  "pre-commit",            # runs the detect-secrets hook
+  "detect-secrets",
+  # GPU / cloud ops (run on the GPU box / AWS)
+  "tritonclient[http]",    # perf_analyzer client
+  "triton-model-analyzer", # `analyze` config sweep
+  "boto3",
+  "sagemaker",
+  "pynvml",
+]
+
+[project.scripts]
+datascience = "datascience.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/datascience"]

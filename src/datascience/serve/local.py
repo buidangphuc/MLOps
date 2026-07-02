@@ -8,8 +8,8 @@ import json
 
 import numpy as np
 
-from src.datascience import log
-from src.datascience.constants import paths
+from datascience import log
+from datascience.constants import paths
 
 
 class _OnnxModel:
@@ -50,7 +50,7 @@ class _TorchModel:
     """Serve the trained torch model directly — the default runtime, no ONNX conversion."""
 
     def __init__(self):
-        from src.datascience.infer.predict import Predictor
+        from datascience.infer.predict import Predictor
 
         self.predictor = Predictor()
         log.info("loaded torch model (runtime=torch)")

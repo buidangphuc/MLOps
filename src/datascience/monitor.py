@@ -11,11 +11,11 @@ import json
 
 from pathlib import Path
 
-from src.datascience import log
-from src.datascience import metrics as M
-from src.datascience.config.configuration import ConfigurationManager
-from src.datascience.constants import paths
-from src.datascience.utils.io import atomic_write_json, read_jsonl
+from datascience import log
+from datascience import metrics as M
+from datascience.config.configuration import ConfigurationManager
+from datascience.constants import paths
+from datascience.utils.io import atomic_write_json, read_jsonl
 
 
 def monitor():
@@ -29,7 +29,7 @@ def monitor():
     ref = json.loads(paths.REFERENCE_PROFILE.read_text())
     texts = [r["text"] for r in read_jsonl(Path(m.traffic_file), required_fields=["text"])]
 
-    from src.datascience.infer.predict import Predictor
+    from datascience.infer.predict import Predictor
 
     preds = Predictor().predict_batch(texts)
     counts = collections.Counter(p["label"] for p in preds)

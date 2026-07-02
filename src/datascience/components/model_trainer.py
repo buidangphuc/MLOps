@@ -1,12 +1,12 @@
 import math
 import os
 
-from src.datascience import log
-from src.datascience.constants import paths
-from src.datascience.entity.config_entity import ModelTrainerConfig
-from src.datascience.model import build_for_training, load_label_map, save_pretrained_atomic
-from src.datascience.utils.io import read_jsonl
-from src.datascience.utils.runtime import is_oom_error, set_run_status, set_seed
+from datascience import log
+from datascience.constants import paths
+from datascience.entity.config_entity import ModelTrainerConfig
+from datascience.model import build_for_training, load_label_map, save_pretrained_atomic
+from datascience.utils.io import read_jsonl
+from datascience.utils.runtime import is_oom_error, set_run_status, set_seed
 
 
 def _empty_cache():
@@ -208,7 +208,7 @@ class ModelTrainer:
         collator = DataCollatorWithPadding(tokenizer)
 
         def compute_metrics(eval_pred):
-            from src.datascience import metrics as M
+            from datascience import metrics as M
 
             logits, labels = eval_pred
             probs = M.softmax(np.asarray(logits))

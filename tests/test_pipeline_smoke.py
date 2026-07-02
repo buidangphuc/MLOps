@@ -11,17 +11,17 @@ import json
 import numpy as np
 import pytest
 
-from src.datascience.components.data_transformation import _can_stratify, _drop_cross_split_dups
-from src.datascience.entity.config_entity import GateConfig
-from src.datascience.gate import GateFailed, QualityGate
-from src.datascience.metrics import (
+from datascience.components.data_transformation import _can_stratify, _drop_cross_split_dups
+from datascience.entity.config_entity import GateConfig
+from datascience.gate import GateFailed, QualityGate
+from datascience.metrics import (
     bootstrap_ci,
     compute_scalar_metrics,
     expected_calibration_error,
     softmax,
 )
-from src.datascience.registry.local import LocalRegistry
-from src.datascience.utils.io import read_jsonl, write_jsonl
+from datascience.registry.local import LocalRegistry
+from datascience.utils.io import read_jsonl, write_jsonl
 
 
 def test_jsonl_roundtrip_and_skip_bad(tmp_path):

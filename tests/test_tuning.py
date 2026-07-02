@@ -11,11 +11,11 @@ import types
 
 import numpy as np
 
-from src.datascience.config.configuration import ConfigurationManager
-from src.datascience.metrics import compute_scalar_metrics
-from src.datascience.serve_analyzer import _ma_config
-from src.datascience.tune.loop import _deep_merge
-from src.datascience.utils.io import data_fingerprint
+from datascience.config.configuration import ConfigurationManager
+from datascience.metrics import compute_scalar_metrics
+from datascience.serve_analyzer import _ma_config
+from datascience.tune.loop import _deep_merge
+from datascience.utils.io import data_fingerprint
 
 
 def test_deep_merge_nested():

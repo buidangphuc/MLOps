@@ -14,10 +14,10 @@ from pathlib import Path
 
 import yaml
 
-from src.datascience import log
-from src.datascience.config.configuration import ConfigurationManager
-from src.datascience.constants import paths
-from src.datascience.utils.io import read_jsonl
+from datascience import log
+from datascience.config.configuration import ConfigurationManager
+from datascience.constants import paths
+from datascience.utils.io import read_jsonl
 
 
 # Varied-length stand-in traffic for an initial/pre-deploy tune (replace with real captured traffic).

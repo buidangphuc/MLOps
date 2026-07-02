@@ -1,3 +1,3 @@
-from src.datascience.cli import main
+from datascience.cli import main
 
 main()
