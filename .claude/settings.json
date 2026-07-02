@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pytest:*)",
+      "Bash(make help:*)",
+      "Bash(make test:*)",
+      "Bash(make test-one:*)",
+      "Bash(datascience --help)",
+      "Bash(python main.py --help)",
+      "Bash(pip install -e:*)",
+      "Bash(git status:*)",
+      "Bash(git log:*)",
+      "Bash(git diff:*)",
+      "Bash(git show:*)",
+      "Bash(git branch:*)"
+    ]
+  }
+}
