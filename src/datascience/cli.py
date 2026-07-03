@@ -1,8 +1,9 @@
 """Unified CLI. Server-friendly: each stage runs independently, `--gpu` selects
-the device, exit codes propagate (a failing gate exits non-zero).
+the device (a global flag — place it BEFORE the subcommand), exit codes
+propagate (a failing gate exits non-zero).
 
-  python main.py run [--only train | --from eval] [--gpu 0]
-  python main.py ingest | validate | transform | train | eval | sanity [--gpu 0]
+  python main.py [--gpu 0] run [--only train | --from eval]
+  python main.py [--gpu 0] ingest | validate | transform | train | eval | sanity
   python main.py tune                  # train+eval+rank the variants in experiments.yaml
   python main.py promote <variant>     # version the chosen variant into the registry
   python main.py infer --text "..."

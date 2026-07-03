@@ -1,7 +1,7 @@
 """Entry point. Thin shim over the CLI so you can run:
 
     python main.py run            # full pipeline
-    python main.py train --gpu 0  # one stage
+    python main.py --gpu 0 train  # one stage (--gpu is global, before the subcommand)
     python main.py infer --text "..."
 
 (equivalent to `python -m datascience <command>`).

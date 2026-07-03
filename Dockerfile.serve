@@ -3,7 +3,12 @@
 # and rolls back independently; the model artifact mounts as a volume so a
 # new model needs NO image rebuild.
 #
-#   datascience optimize && datascience package            # build the bundle
+# The image is torch-free but bakes in config/, whose default is runtime: torch.
+# Set `serving.runtime: onnx` in config/serving.yaml BEFORE building — the torch
+# runtime cannot start in this image (torch/python-box are dev-only).
+#
+#   # in config/serving.yaml: runtime: onnx
+#   datascience optimize && datascience package            # build the ONNX bundle
 #   docker build -f Dockerfile.serve -t model-server .
 #   docker run -p 8080:8080 -v $PWD/artifacts/bundle:/srv/artifacts/bundle:ro model-server
 #

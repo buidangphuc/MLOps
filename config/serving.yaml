@@ -16,7 +16,10 @@ triton:
   max_queue_delay_us: 5000
   instance_count: 1
   device: gpu              # gpu | cpu  (cpu = local docker on a non-GPU box)
-  precision: fp16          # fp16 | fp32 | int8   (fp16 = good default on Ampere+)
+  precision: fp16          # NOT wired — no code reads triton.precision. package_triton
+                           # emits a TensorRT precision block (hardcoded FP16) COMMENTED OUT
+                           # into the generated classifier config.pbtxt; uncomment + tune it
+                           # on the GPU box. Kept here as the intended default.
 
 sagemaker:
   instance_type: ml.g5.xlarge
@@ -26,7 +29,8 @@ sagemaker:
   role_arn: null           # SageMaker execution role
 
 local:
-  port: 8080
+  port: 8080               # informational only — the real port comes from `serve --port`
+                           # (default 8080); this key is not read.
 
 # `analyze` (serve_analyzer.py) — POST-DEPLOY serving-param tuning, driven by REAL traffic.
 # Workflow: deploy with defaults -> capture real requests from the live endpoint into
@@ -42,7 +46,8 @@ analyze:
 # `monitor` — drift detection (warn-only, no labels). Compares captured prod inputs against the
 # reference profile saved at eval. Does NOT retrain/gate — that needs labels + lifecycle (deferred).
 monitor:
-  traffic_file: null             # captured prod inputs (JSONL {"text": ...}); same idea as analyze
+  traffic_file: null             # REQUIRED — captured prod inputs (JSONL {"text": ...});
+                                 # monitor exits if unset (no mock fallback, unlike analyze)
   psi_warn: 0.2                  # predicted-label distribution drift (PSI): >0.1 moderate, >0.25 large
   confidence_drop_warn: 0.1      # drop in mean max-softmax confidence vs reference
   length_change_warn: 0.5        # relative change in mean input length vs reference

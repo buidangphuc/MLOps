@@ -40,9 +40,17 @@ edit** for a new task, NOT a configurable framework.
 - `src/datascience/tune/` — `loop.py` (run+rank variants), `promote.py`
   (gate→registry+lineage), `dapt.py` (R4).
 - `src/datascience/serve/` — `local.py` (FastAPI, torch or ONNX; `--stage`
-  serves what a registry stage points at). `triton.py` +
+  resolves the dir a registry stage points at). `triton.py` +
   `deploy_sagemaker.py` are reference stubs. `serve_analyzer.py` = serving
   config sweep (GPU host).
+
+  > `serve --stage` is an **open seam**: the CLI resolves the registry dir but
+  > model loading never uses it — the default torch runtime loads `MODEL_DIR`
+  > regardless (`_TorchModel` doesn't pass the dir to `Predictor(model_dir=…)`),
+  > and the onnx runtime can't serve a registry dir (versions are torch model
+  > dirs without `model.onnx`/`model_card.json`; `stage_path` also returns a
+  > `str` where `local.py` expects a `Path`). Wire it per fork when
+  > stage-based serving is actually needed.
 - `src/datascience/{model,metrics,gate}.py` — HF factory + atomic save;
   metric/calibration/CI helpers; name-based quality gate (`on_fail: error`
   exits non-zero for CI).
@@ -83,9 +91,12 @@ edit** for a new task, NOT a configurable framework.
   gate-passing model enters the registry. Stage pointers
   (staging/production) move only via `promote-stage`; `rollback` restores
   the previous holder.
-- **Lineage.** A registered version records metrics + config snapshot +
-  MLflow run_id + `data_version` (hash+rows) — keep both register sites
-  (`pipeline/stages.py`, `tune/promote.py`) passing them.
+- **Lineage.** Both register sites (`pipeline/stages.py`, `tune/promote.py`)
+  record metrics + `data_version` (hash+rows); the base pipeline also passes
+  `base_model` + `dataset`, and the **tune path additionally** records the
+  MLflow `run_id` + full config snapshot (a plain `run` never captures a
+  `run_id` and has no variant config to snapshot). Keep each site passing its
+  fields.
 - **Tracking ≠ registry.** MLflow logs metrics/curves; the registry is the
   model store.
 
@@ -128,5 +139,6 @@ edit** for a new task, NOT a configurable framework.
 ## Deferred (not built — don't assume these exist)
 
 The action half of monitoring (retrain trigger + live quality gate — needs
-prod labels), CD (CI runs pytest only), additional remote registry
-backends beyond s3 (mlflow/sagemaker stay open seams in `_REMOTE_BACKENDS`).
+prod labels), CD (CI runs pytest only — a deploy target is a per-fork
+decision, not a template one), additional remote registry backends beyond
+s3 (mlflow/sagemaker stay open seams in `_REMOTE_BACKENDS`).

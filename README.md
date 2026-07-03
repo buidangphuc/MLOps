@@ -54,13 +54,15 @@ your data).
 | `rollback <name> --stage production` | restore the stage's previous version |
 | `stage-path <name> <stage>` | print the model dir a stage points at (deploy tooling) |
 
-`--gpu N` on any stage sets `CUDA_VISIBLE_DEVICES`. `dvc repro` runs the same DAG with caching.
+`--gpu N` is a global flag placed **before** the subcommand
+(`python main.py --gpu 0 train`) and sets `CUDA_VISIBLE_DEVICES`. `dvc repro`
+runs the same DAG with caching.
 
 ## Architecture
 
 Three layers: **(1) Pipeline** — one config → one reproducible result · **(2) Tuning** — a loop over
-variants, ranked + promoted with lineage · **(3) Lifecycle** (planned) — staging/prod profiles +
-promote/rollback.
+variants, ranked + promoted with lineage · **(3) Lifecycle** — staging/production stage pointers +
+`promote-stage`/`rollback` (see Commands).
 
 Two repos, boundary = the deployed endpoint. **This repo = all core AI** (data → train → tune → eval
 → optimize → package → serve/deploy). A business app (e.g. `fastapi_template`) only **calls** the
@@ -103,7 +105,7 @@ capability only when you have a concrete need).
 | **INT8 quantization** | `serving.optimize.quantize: dynamic-int8` | ONNX path only |
 | **Triton config sweep** | `python main.py analyze` (+ `serving.analyze.traffic_file`) | real traffic = accurate; null = mock |
 | **Drift monitor** | `python main.py monitor` (+ `serving.monitor.traffic_file`) | warn-only; needs no labels |
-| **Remote registry** | `registry.remote.backend: mlflow\|sagemaker` | seam — not connected yet |
+| **Remote registry push** | `registry.remote.backend: s3` (+ `REGISTRY_S3_BUCKET`, `S3_ENDPOINT_URL` for MinIO) | `mlflow`/`sagemaker` stay open seams in `_REMOTE_BACKENDS` |
 
 Toggleable but **on by default** (turn off in config if unwanted): the quality `gate`, calibration,
 per-class report, error dump, bootstrap CI, leakage check.
@@ -111,9 +113,11 @@ per-class report, error dump, bootstrap CI, leakage check.
 ## Status
 
 Built + verified: full pipeline, tuning loop (`tune`/`promote` with lineage), torch & ONNX serving,
-local FastAPI/ONNX-Runtime, drift monitoring (`monitor`, warn-only). Triton / SageMaker / GPU paths run
-on a CUDA box. **Deferred:** lifecycle stages (staging/prod + rollback), the *action* half of monitoring
-(retrain trigger + live quality gate — needs labels), CI/CD.
+local FastAPI/ONNX-Runtime, drift monitoring (`monitor`, warn-only), lifecycle stages
+(staging/production pointers + rollback via `promote-stage`/`rollback`/`stage-path`), S3/MinIO remote
+registry push. Triton / SageMaker / GPU paths run on a CUDA box. **Deferred:** the *action* half of
+monitoring (retrain trigger + live quality gate — needs prod labels) and CD (CI runs pytest only —
+a deploy target is a per-fork decision, not a template one).
 
 **Scaling note (optional, not built):** SageMaker **Multi-Model Endpoint (MME)** is a future *deploy
 target*, not a pipeline change — run the pipeline N times → N self-contained tars → one MME. Reach for
@@ -124,7 +128,13 @@ torch) — big tars make MME's on-demand model loads slow.
 **Serving image:** `Dockerfile.serve` packages the local FastAPI/ONNX server
 as a small torch-free container — the model bundle mounts at
 `/srv/artifacts/bundle`, so shipping a new model is a volume swap (or a
-`stage-path` re-point), never an image rebuild.
+`stage-path` re-point), never an image rebuild. **Precondition:** the image is
+torch-free (`.[cpu]`) but bakes in `config/`, whose shipped default is
+`runtime: torch` — set `serving.runtime: onnx` in `config/serving.yaml` and run
+`optimize` + `package` *before* `docker build`, otherwise the container crashes
+at startup trying to load a torch model (torch/`python-box` are dev-only). To
+avoid a rebuild you can bind-mount an onnx-set `serving.yaml` over
+`/srv/config/serving.yaml` at `docker run`.
 
 **Reference-only paths:** `serve/triton.py` and `serve/deploy_sagemaker.py` are
 thin stubs sketching the GPU-box/AWS route — the implemented serving path is

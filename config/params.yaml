@@ -39,7 +39,7 @@ metrics:
   objective: macro_f1        # best-model selection + gate reference
   per_class: true            # per-class P/R/F1 + confusion matrix
   error_dump: true           # write misclassified examples
-  bootstrap_ci: true         # metric +/- 95% CI on test
+  bootstrap_ci: true         # objective's +/-95% CI on test (accuracy/macro_f1/micro_f1 only — silently skipped for mcc/pr_auc)
   calibration: true          # ECE + temperature scaling (fit on val, saved)
   slice_field: null          # opt-in: per-segment metrics by this field
 
@@ -58,7 +58,7 @@ tracking:
 registry:
   name: TextClassifier
   remote:
-    backend: none   # none | s3 (REGISTRY_S3_BUCKET + S3_ENDPOINT_URL for MinIO)            # none | mlflow | sagemaker (remote not built yet)
+    backend: none   # none | s3 (REGISTRY_S3_BUCKET + S3_ENDPOINT_URL for MinIO); mlflow/sagemaker = open seams in _REMOTE_BACKENDS
 
 # ----------------------------------------------------------------------------
 # Tuning rungs (advanced). All off => plain fine-tune above. Climb a rung only when
