@@ -1,248 +1,239 @@
-"""PACKAGE — assemble deployable artifacts from the optimized ONNX model.
+"""Package the trained GLiNER model into a Triton python-backend Multi-Model Endpoint
+(MME) repository — one model dir per real model, one tar each.
 
-Two targets:
-  • bundle  → one self-contained dir (onnx + tokenizer + label_map + temperature + model_card.json)
-  • triton  → a Triton ensemble model_repository (text in → {label, score}) + docker-compose
+This replaces the template's ONNX-ensemble text-classification packager. It ports the
+working structure of `gliner_multimodel_triton/` and fixes the deployment-report bugs:
 
-Lean: straightforward file assembly. Triton/SageMaker bits run on the GPU box.
+  - deps installed ONCE into a shared layer, not re-pip'd per model (#15)
+  - deps from requirements.txt (pinned → reproducible build) (#16)
+  - build must run on Python 3.10 so .so ABI = cpython-310 (matches Triton 23.07) (#1);
+    the interpreter is asserted and any bundled .so ABI is checked
+  - model version = the real data/lineage version, NOT the container-start date (#3)
+  - NO `_1`/`_2` duplicate models — one dir per real model (#10)
+  - per-entity threshold comes from eval's threshold.json, not a hardcoded table
+
+`package_triton()` is the GPU/prod path. The CPU/test path does NOT use Triton — see
+serve/local.py (FastAPI) + optimize.py (ONNX+int8).
 """
 
 import json
 import shutil
-import subprocess
+import sys
+import tarfile
 
-from datetime import datetime, timezone
 from pathlib import Path
 
 from src.datascience import log
 from src.datascience.config.configuration import ConfigurationManager
 from src.datascience.constants import paths
-from src.datascience.model import load_label_map
+from src.datascience.utils.io import read_data_version
+
+# The Triton SageMaker DLC 23.07 ships CPython 3.10. Bundled compiled deps (.so) must match.
+_TRITON_ABI = "cpython-310"
 
 
-def _git_sha():
-    try:
-        return subprocess.check_output(
-            ["git", "rev-parse", "--short", "HEAD"], cwd=paths.PROJECT_ROOT, text=True
-        ).strip()
-    except Exception:
-        return "unknown"
-
-
-def _temperature():
-    tf = paths.MODEL_DIR / "temperature.json"
-    return json.loads(tf.read_text())["temperature"] if tf.exists() else 1.0
-
-
-def _model_card(cm, label2id, id2label):
-    metrics = json.loads(paths.METRICS_FILE.read_text()) if paths.METRICS_FILE.exists() else {}
-    return {
-        "name": cm.params.registry.name,
-        "base_model": cm.params.model.base_model,
-        "max_length": cm.params.model.max_length,
-        "task": "text-classification",
-        "classes": [id2label[i] for i in sorted(id2label)],
-        "num_labels": len(label2id),
-        "metrics": {k: v for k, v in metrics.items() if isinstance(v, (int, float))},
-        "optimize": dict(cm.serving().optimize),
-        "temperature": _temperature(),
-        "io_schema": {"input": {"text": "string"}, "output": {"label": "string", "score": "float"}},
-        "git_sha": _git_sha(),
-        "created_at": datetime.now(timezone.utc).isoformat(),
-    }
-
-
-def package_bundle():
-    cm = ConfigurationManager()
-    label2id, id2label = load_label_map(paths.LABEL_MAP)
-
-    out = paths.BUNDLE_DIR
-    if out.exists():
-        shutil.rmtree(out)
-    shutil.copytree(paths.OPTIMIZED_DIR, out)  # onnx + tokenizer
-    shutil.copy(paths.LABEL_MAP, out / "label_map.json")
-    (out / "temperature.json").write_text(json.dumps({"temperature": _temperature()}))
-    (out / "model_card.json").write_text(
-        json.dumps(_model_card(cm, label2id, id2label), indent=2, ensure_ascii=False)
-    )
-    log.info(f"bundle ready -> {out}")
-
-
-# --- Triton ensemble: preprocess(py) -> classifier(onnx) -> postprocess(py) -----
-
-_PREPROCESS_PY = '''import json
+# --- the python-backend model.py served INSIDE Triton (one per model dir) -----------------
+# Template string (runs inside the Triton container, not importable here): loads the bundled
+# GLiNER weights + label list + per-entity thresholds, answers text -> entities.
+_MODEL_PY = '''\
+import json
 import os
+import sys
+
+_HERE = os.path.dirname(os.path.abspath(__file__))
+for p in (_HERE, os.path.join(_HERE, "deps")):
+    if os.path.isdir(p) and p not in sys.path:
+        sys.path.insert(0, p)
 
 import numpy as np
 import triton_python_backend_utils as pb_utils
 
-from transformers import AutoTokenizer
+
+def _merge_spans(texts):
+    merged = []
+    for t in (x.strip() for x in texts):
+        if t and not any(t in m for m in merged):
+            merged.append(t)
+    return " ".join(merged)
 
 
 class TritonPythonModel:
     def initialize(self, args):
-        here = os.path.join(args["model_repository"], args["model_version"])
-        self.tokenizer = AutoTokenizer.from_pretrained(os.path.join(here, "tokenizer"))
-        self.max_length = json.load(open(os.path.join(here, "settings.json")))["max_length"]
+        import torch
+        from gliner import GLiNER
+
+        model_dir = os.path.join(_HERE, "model")
+        meta = json.load(open(os.path.join(_HERE, "serving_meta.json")))
+        self.version = meta["version"]                 # real model version, not a date
+        self.labels = meta["labels"]
+        self.flat_ner = meta.get("flat_ner", True)
+        self.max_width = meta.get("max_width")
+        thr = meta.get("threshold", 0.5)               # per-entity dict (from eval) or float
+        self.entity_thresholds = thr if isinstance(thr, dict) else None
+        self.default_threshold = min(thr.values()) if isinstance(thr, dict) else thr
+
+        want_gpu = os.environ.get("SERVE_DEVICE", "gpu") == "gpu"
+        self.device = "cuda" if (want_gpu and torch.cuda.is_available()) else "cpu"
+        kw = {"load_tokenizer": True}
+        if self.max_width is not None:
+            kw["max_width"] = self.max_width
+        self.model = GLiNER.from_pretrained(model_dir, **kw).to(self.device).eval()
 
     def execute(self, requests):
+        # Output shape the bds-genai-sse GLiNER clients expect: a JSON string per text of
+        # {"predictions": {<Label>: <merged span text>}} (PascalCase labels; the client
+        # lowercases the first letter and wraps as parsed["output"]). Same parser dict the
+        # FastAPI path returns, so the endpoint is swappable without client changes.
         responses = []
-        for request in requests:
-            raw = pb_utils.get_input_tensor_by_name(request, "TEXT").as_numpy()
-            texts = [(t[0].decode("utf-8") if isinstance(t[0], bytes) else str(t[0])) for t in raw]
-            enc = self.tokenizer(
-                texts, truncation=True, max_length=self.max_length,
-                padding="max_length", return_tensors="np",
+        for req in requests:
+            arr = pb_utils.get_input_tensor_by_name(req, "text_input").as_numpy()
+            texts = [t.decode("utf-8") if isinstance(t, bytes) else str(t) for t in arr.reshape(-1)]
+            batch = self.model.batch_predict_entities(
+                texts, self.labels, threshold=self.default_threshold, flat_ner=self.flat_ner
             )
-            responses.append(pb_utils.InferenceResponse(output_tensors=[
-                pb_utils.Tensor("input_ids", enc["input_ids"].astype(np.int64)),
-                pb_utils.Tensor("attention_mask", enc["attention_mask"].astype(np.int64)),
-            ]))
+            out = []
+            for ents in batch:
+                if self.entity_thresholds:
+                    ents = [e for e in ents
+                            if e["score"] >= self.entity_thresholds.get(e["label"], self.default_threshold)]
+                by_label = {}
+                for e in ents:
+                    by_label.setdefault(e["label"], []).append(e["text"])
+                predictions = {lbl: _merge_spans(v) for lbl, v in by_label.items()}
+                out.append(json.dumps({"predictions": predictions, "version": self.version},
+                                      ensure_ascii=False))
+            t = pb_utils.Tensor("text_output", np.array(out, dtype=object))
+            responses.append(pb_utils.InferenceResponse(output_tensors=[t]))
         return responses
-'''
 
-_POSTPROCESS_PY = '''import json
-import os
-
-import numpy as np
-import triton_python_backend_utils as pb_utils
-
-
-class TritonPythonModel:
-    def initialize(self, args):
-        here = os.path.join(args["model_repository"], args["model_version"])
-        lm = json.load(open(os.path.join(here, "label_map.json")))
-        self.id2label = {int(k): v for k, v in lm["id2label"].items()}
-        self.temperature = json.load(open(os.path.join(here, "temperature.json"))).get("temperature", 1.0)
-
-    def execute(self, requests):
-        responses = []
-        for request in requests:
-            logits = pb_utils.get_input_tensor_by_name(request, "logits").as_numpy().astype(np.float32)
-            z = logits / self.temperature
-            e = np.exp(z - z.max(axis=1, keepdims=True))
-            probs = e / e.sum(axis=1, keepdims=True)
-            idx = probs.argmax(axis=1)
-            labels = np.array([[self.id2label[int(i)].encode("utf-8")] for i in idx], dtype=object)
-            scores = probs.max(axis=1).reshape(-1, 1).astype(np.float32)
-            responses.append(pb_utils.InferenceResponse(output_tensors=[
-                pb_utils.Tensor("label", labels),
-                pb_utils.Tensor("score", scores),
-            ]))
-        return responses
+    def finalize(self):
+        self.model = None
 '''
 
 
-def _write(path: Path, text: str):
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(text)
+def _config_pbtxt(name: str, t, kind: str) -> str:
+    return f'''name: "{name}"
+backend: "python"
+max_batch_size: {t.max_batch_size}
+
+input [
+  {{ name: "text_input", data_type: TYPE_STRING, dims: [ -1 ] }}
+]
+output [
+  {{ name: "text_output", data_type: TYPE_STRING, dims: [ -1 ] }}
+]
+
+instance_group [
+  {{ kind: {kind}, count: {t.instance_group_count} }}
+]
+
+dynamic_batching {{
+  max_queue_delay_microseconds: {t.max_queue_delay_us}
+}}
+'''
+
+
+def _serving_version() -> str:
+    """Real model version for lineage — from the data fingerprint written at transform time,
+    NOT the container-start date (bug #3). 'unversioned' if absent."""
+    dv = read_data_version()
+    return f"data-{dv['sha256']}" if dv else "unversioned"
+
+
+def _assert_py310():
+    if not sys.version.startswith("3.10"):
+        raise RuntimeError(
+            f"package must run on Python 3.10 for Triton-container ABI ({_TRITON_ABI}); "
+            f"got {sys.version.split()[0]}. Use the tri310 env."
+        )
+
+
+def _bundle_deps(shared_deps: Path) -> None:
+    """Install pinned serving deps ONCE into a shared layer (#15, #16), then check ABI (#1)."""
+    if shared_deps.exists():
+        log.info(f"reusing bundled deps at {shared_deps}")
+        return
+    import subprocess
+
+    shared_deps.mkdir(parents=True, exist_ok=True)
+    req = paths.PROJECT_ROOT / "requirements.txt"
+    log.info(f"bundling deps -> {shared_deps} (from {req.name}, Python 3.10)")
+    subprocess.check_call(
+        [sys.executable, "-m", "pip", "install", "-r", str(req),
+         "gliner==0.2.21", "--target", str(shared_deps)]
+    )
+    _assert_abi(shared_deps)
+
+
+def _assert_abi(deps: Path) -> None:
+    bad = [p.name for p in deps.rglob("*.so") if "cpython-3" in p.name and _TRITON_ABI not in p.name]
+    if bad:
+        raise RuntimeError(f"bundled .so ABI != {_TRITON_ABI} (won't load in Triton 23.07): {bad[:3]}")
 
 
 def package_triton():
+    """Build a Triton python-backend MME repo (one dir per real model) + per-model tars."""
+    _assert_py310()
     cm = ConfigurationManager()
-    t = cm.serving().triton
-    label2id, _ = load_label_map(paths.LABEL_MAP)
-    n = len(label2id)
-    mbs = t.max_batch_size
-    kind = "KIND_GPU" if t.device == "gpu" else "KIND_CPU"
-    pref = ", ".join(str(b) for b in t.preferred_batch_sizes)
+    sv = cm.serving()
+    t, sm = sv.triton, sv.sagemaker
+    version = _serving_version()
+    kind = "KIND_GPU" if sv.get("device", "gpu") == "gpu" else "KIND_CPU"
 
-    repo = paths.TRITON_REPO
-    if repo.exists():
-        shutil.rmtree(repo)
+    names = [m["name"] for m in sm.models]
+    if len(names) != len(set(names)):
+        raise ValueError(f"duplicate model names in serving.sagemaker.models: {names}")
 
-    # preprocess (python)
-    from transformers import AutoTokenizer
+    if paths.TRITON_REPO.exists():
+        shutil.rmtree(paths.TRITON_REPO)          # regenerable artifact — safe to rebuild
+    paths.MME_TARS.mkdir(parents=True, exist_ok=True)
 
-    _write(repo / "preprocess" / "1" / "model.py", _PREPROCESS_PY)
-    AutoTokenizer.from_pretrained(paths.OPTIMIZED_DIR).save_pretrained(repo / "preprocess" / "1" / "tokenizer")
-    _write(repo / "preprocess" / "1" / "settings.json", json.dumps({"max_length": cm.params.model.max_length}))
-    _write(repo / "preprocess" / "config.pbtxt", f'''name: "preprocess"
-backend: "python"
-max_batch_size: {mbs}
-input [{{ name: "TEXT" data_type: TYPE_STRING dims: [1] }}]
-output [
-  {{ name: "input_ids" data_type: TYPE_INT64 dims: [-1] }},
-  {{ name: "attention_mask" data_type: TYPE_INT64 dims: [-1] }}
-]
-instance_group [{{ kind: KIND_CPU count: 1 }}]
-''')
+    shared_deps = paths.ARTIFACTS / "triton_deps"
+    _bundle_deps(shared_deps)
 
-    # classifier (onnxruntime)
-    _write(repo / "classifier" / "config.pbtxt", f'''name: "classifier"
-backend: "onnxruntime"
-max_batch_size: {mbs}
-input [
-  {{ name: "input_ids" data_type: TYPE_INT64 dims: [-1] }},
-  {{ name: "attention_mask" data_type: TYPE_INT64 dims: [-1] }}
-]
-output [{{ name: "logits" data_type: TYPE_FP32 dims: [{n}] }}]
-dynamic_batching {{ preferred_batch_size: [{pref}] max_queue_delay_microseconds: {t.max_queue_delay_us} }}
-instance_group [{{ kind: {kind} count: {t.instance_count} }}]
-# GPU fp16/TensorRT (tune on the GPU box):
-# optimization {{ execution_accelerators {{ gpu_execution_accelerator [
-#   {{ name: "tensorrt" parameters {{ key: "precision_mode" value: "FP16" }} }} ] }} }}
-''')
-    (repo / "classifier" / "1").mkdir(parents=True, exist_ok=True)
-    shutil.copy(paths.OPTIMIZED_DIR / "model.onnx", repo / "classifier" / "1" / "model.onnx")
+    labels = _labels()
+    threshold, flat_ner, max_width = _serving_meta(cm)
 
-    # postprocess (python)
-    _write(repo / "postprocess" / "1" / "model.py", _POSTPROCESS_PY)
-    shutil.copy(paths.LABEL_MAP, repo / "postprocess" / "1" / "label_map.json")
-    (repo / "postprocess" / "1" / "temperature.json").write_text(json.dumps({"temperature": _temperature()}))
-    _write(repo / "postprocess" / "config.pbtxt", f'''name: "postprocess"
-backend: "python"
-max_batch_size: {mbs}
-input [{{ name: "logits" data_type: TYPE_FP32 dims: [{n}] }}]
-output [
-  {{ name: "label" data_type: TYPE_STRING dims: [1] }},
-  {{ name: "score" data_type: TYPE_FP32 dims: [1] }}
-]
-instance_group [{{ kind: KIND_CPU count: 1 }}]
-''')
+    tars = {}
+    for m in sm.models:
+        name, ckpt = m["name"], Path(m["checkpoint"])
+        if not ckpt.exists():
+            raise FileNotFoundError(f"checkpoint for '{name}' not found: {ckpt}")
 
-    # ensemble
-    (repo / "text_classifier" / "1").mkdir(parents=True, exist_ok=True)
-    _write(repo / "text_classifier" / "config.pbtxt", f'''name: "text_classifier"
-platform: "ensemble"
-max_batch_size: {mbs}
-input [{{ name: "TEXT" data_type: TYPE_STRING dims: [1] }}]
-output [
-  {{ name: "label" data_type: TYPE_STRING dims: [1] }},
-  {{ name: "score" data_type: TYPE_FP32 dims: [1] }}
-]
-ensemble_scheduling {{ step [
-  {{ model_name: "preprocess" model_version: -1
-     input_map {{ key: "TEXT" value: "TEXT" }}
-     output_map {{ key: "input_ids" value: "input_ids" }}
-     output_map {{ key: "attention_mask" value: "attention_mask" }} }},
-  {{ model_name: "classifier" model_version: -1
-     input_map {{ key: "input_ids" value: "input_ids" }}
-     input_map {{ key: "attention_mask" value: "attention_mask" }}
-     output_map {{ key: "logits" value: "logits" }} }},
-  {{ model_name: "postprocess" model_version: -1
-     input_map {{ key: "logits" value: "logits" }}
-     output_map {{ key: "label" value: "label" }}
-     output_map {{ key: "score" value: "score" }} }}
-] }}
-''')
+        base = paths.TRITON_REPO / name / "1"
+        base.mkdir(parents=True, exist_ok=True)
+        (base / "model.py").write_text(_MODEL_PY)
+        shutil.copytree(ckpt, base / "model")
+        (base / "serving_meta.json").write_text(json.dumps(
+            {"version": version, "labels": labels, "threshold": threshold,
+             "flat_ner": flat_ner, "max_width": max_width}, ensure_ascii=False, indent=2))
+        shutil.copytree(shared_deps, base / "deps")     # shared layer, built once (#15)
+        (paths.TRITON_REPO / name / "config.pbtxt").write_text(_config_pbtxt(name, t, kind))
 
-    _write_compose()
-    log.info(f"Triton model_repository ready -> {repo}")
+        tar_path = paths.MME_TARS / f"{name}.tar.gz"
+        with tarfile.open(tar_path, "w:gz") as tar:
+            tar.add(paths.TRITON_REPO / name, arcname=name)
+        tars[name] = tar_path
+        log.info(f"packaged {name} -> {tar_path} (version={version}, {kind})")
+
+    log.info(f"Triton MME: {len(tars)} model(s), no duplicates -> {paths.MME_TARS}")
+    return tars
 
 
-def _write_compose():
-    # The python backends need `transformers`; install it into the Triton image at start.
-    compose = paths.PROJECT_ROOT / "infra" / "triton" / "docker-compose.yml"
-    _write(compose, '''services:
-  triton:
-    image: nvcr.io/nvidia/tritonserver:24.08-py3
-    # GPU box: uncomment ->
-    # deploy: { resources: { reservations: { devices: [{ capabilities: [gpu] }] } } }
-    ports: ["8000:8000", "8001:8001", "8002:8002"]
-    volumes:
-      - ../../artifacts/model_repository:/models
-    command: >
-      bash -lc "pip install -q transformers && tritonserver --model-repository=/models"
-''')
-    log.info(f"docker-compose -> {compose}")
+def _labels() -> list:
+    from src.datascience.model import load_labels
+
+    return load_labels(paths.LABEL_MAP)
+
+
+def _serving_meta(cm):
+    """(threshold [per-entity dict from eval, else 0.5], flat_ner, max_width)."""
+    ev = cm.evaluation()
+    threshold = 0.5
+    if paths.THRESHOLD_FILE.exists():
+        threshold = json.loads(paths.THRESHOLD_FILE.read_text())["threshold"]
+    return threshold, ev.flat_ner, ev.max_width
+
+
+def package_bundle():
+    raise NotImplementedError("bundle packaging not migrated for GLiNER; use package_triton")

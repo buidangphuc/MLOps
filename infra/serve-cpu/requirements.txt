@@ -1,0 +1,18 @@
+# CPU serving deps for the self-hosted GLiNER FastAPI endpoint (serve/local.py).
+# torch is installed separately from the CPU wheel index in the Dockerfile (keeps the
+# image ~1GB instead of pulling the ~2GB CUDA build). Everything here is torch-compatible.
+transformers>=4.38.2,<=4.45.2   # GLiNER 0.2.21's ceiling (breaks above 4.45.2)
+gliner==0.2.21
+sentencepiece                   # mdeberta-v3 tokenizer
+fastapi
+uvicorn[standard]
+prometheus-client
+pydantic
+python-box                      # ConfigurationManager reads config via ConfigBox
+ensure
+pyYAML
+joblib
+numpy<2                         # torch 2.2.2 (CPU wheel) is built against numpy 1.x; numpy 2.x
+                                # breaks the torch<->numpy bridge ("Failed to initialize NumPy")
+loguru
+boto3                           # only used when serving.yaml model_source: registry (S3 pull)

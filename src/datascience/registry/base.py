@@ -20,8 +20,10 @@ class RemoteRegistry(Protocol):
     def push(self, model_dir, metrics: dict, metadata: dict) -> str: ...
 
 
-# Seam: backend name -> factory(cfg) -> RemoteRegistry. Empty = nothing connected yet.
-_REMOTE_BACKENDS = {}  # e.g. {"mlflow": MlflowRegistry, "sagemaker": SageMakerRegistry}
+# Seam: backend name -> factory(cfg) -> RemoteRegistry.
+from src.datascience.registry.s3 import from_config as _s3_from_config
+
+_REMOTE_BACKENDS = {"s3": _s3_from_config}  # e.g. add {"mlflow": ..., "sagemaker": ...}
 
 
 def register(model_dir, metrics: dict, metadata: dict, cfg: RegistryConfig) -> dict:
@@ -39,6 +41,8 @@ def register(model_dir, metrics: dict, metadata: dict, cfg: RegistryConfig) -> d
                 "Add a RemoteRegistry to registry.base._REMOTE_BACKENDS to connect it."
             )
         else:
-            result["remote"] = factory(cfg).push(model_dir, metrics, metadata)
+            # hand push the version LocalRegistry just assigned, so S3 stays in lockstep
+            meta_v = {**metadata, "local_version": result["local_version"]}
+            result["remote"] = factory(cfg).push(model_dir, metrics, meta_v)
 
     return result

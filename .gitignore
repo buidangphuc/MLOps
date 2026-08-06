@@ -17,6 +17,9 @@ mlflow.db
 
 .env
 .env.*
+# but DO commit the env templates (.env.example, .env.test.example, .env.staging.example)
+!.env.example
+!.env.*.example
 *.pem
 *.key
 .DS_Store
