@@ -1,39 +1,74 @@
-# Serving / inference config (Phase 2) — read by optimize/package/serve/deploy/bench.
-# Separate from params.yaml because it belongs to a different lifecycle (it's versioned
-# with the deployed endpoint, not with a training experiment). Target GPU = Ampere+.
+# Serving / inference config — read by optimize / package / serve / deploy / bench.
+# Separate from params.yaml: it's versioned with the DEPLOYED endpoint, not a training run.
+#
+# `device` picks the whole serving PATH (both expose the SAME request/response contract —
+# {text} -> {entities}, so clients invoke either identically):
+#   gpu  = PROD  -> Triton python-backend MME, torch fp16, GPU instance + autoscaling
+#   cpu  = TEST  -> FastAPI wrapping Predictor (NO Triton), ONNX+int8, cheap CPU / serverless
+device: gpu                    # gpu | cpu
+runtime: torch                 # torch (gpu) | onnx (cpu path forces onnx+int8)
 
-# Serving runtime:
-#   torch (default) — serve the trained model directly, NO conversion (needs the model stack)
-#   onnx  (opt-in)  — run `optimize` + `package` first; torch-free ONNX Runtime (lightweight/portable)
-runtime: torch
+# Where the FastAPI/CPU serving path gets its weights (the GPU/Triton MME path pulls from
+# S3 via ModelDataUrl already). The serving IMAGE ships code+deps only — no weights baked —
+# so it's model-agnostic and swapping model is a config/env change, not a rebuild.
+#   local    -> use on-disk artifacts/model_trainer/model (dev on the training box)
+#   registry -> pull a version from the S3 model registry at startup (build serving anywhere)
+model_source: local            # local | registry
+model_version: latest          # v3 | latest — env MODEL_VERSION overrides this at run time
+registry:                      # used when model_source: registry (mirror params.yaml push coords)
+  name: GlinerNER
+  s3_bucket: genai-vsdia       # where the model was pushed (v1 lives here)
+  s3_prefix: registry
+  region: ap-southeast-1
 
 optimize:
-  quantize: none           # none | dynamic-int8  (fp32 ONNX is the portable default)
+  quantize: int8-dynamic       # used on the ONNX/cpu path
+  # Parity gate — after ONNX/int8 export, score torch vs onnx-int8 on val with the SAME
+  # eval metric (per-entity F1) + measure latency, so quantization can't silently degrade
+  # quality. FAILS if F1 drops more than max_f1_drop. Writes artifacts/optimize/parity.json.
+  parity_check: true
+  max_f1_drop: 0.01            # max allowed f1_torch - f1_onnx
+  parity_sample: 2000          # val rows compared
 
+# ---- GPU / prod: Triton python-backend Multi-Model Endpoint ------------------------------
 triton:
-  max_batch_size: 32
-  preferred_batch_sizes: [8, 16, 32]
-  max_queue_delay_us: 5000
-  instance_count: 1
-  device: gpu              # gpu | cpu  (cpu = local docker on a non-GPU box)
-  precision: fp16          # fp16 | fp32 | int8   (fp16 = good default on Ampere+)
+  backend: python
+  max_batch_size: 8            # per model (matches the prod Triton config)
+  max_queue_delay_us: 5000     # dynamic batching window
+  instance_group_count: 1      # Triton model instances per SageMaker instance
 
 sagemaker:
-  instance_type: ml.g5.xlarge
-  s3_bucket: null
+  mode: MultiModel             # MME: one endpoint hosts N models, loaded by TargetModel
   region: ap-southeast-1
-  triton_image: null       # region-specific SageMaker Triton DLC URI (see AWS docs)
-  role_arn: null           # SageMaker execution role
+  s3_bucket: null              # FILL — never inferred from CWD/.env
+  s3_prefix: bds-genai-deploy/models/v-REPLACE
+  role_arn: null               # SageMaker execution role ARN
+  triton_image: null           # region-specific SageMaker Triton DLC URI (see AWS docs)
+  instance_type_gpu: ml.g4dn.xlarge
+  instance_type_cpu: ml.c5.xlarge   # used when device=cpu (~2-3x cheaper than GPU)
+  # The REAL models to host — one tar each. NO _1/_2 duplicates (that doubles GPU memory
+  # on one instance without load-balancing — the deleted bug). Add suggestion/embedder here.
+  models:
+    - name: gliner_model_search
+      checkpoint: artifacts/model_trainer/model   # trained GLiNER dir (from `train`)
+  # Autoscaling — values are config, NOT hardcoded. Target-tracking on the metric below.
+  autoscaling:
+    enabled: true
+    min_instances: 1
+    max_instances: null        # FILL to your load ceiling
+    metric: SageMakerVariantInvocationsPerInstance   # invocations/instance (GPUUtilization = custom, gpu-only)
+    target_value: null         # FILL (e.g. requests/instance target)
+    scale_in_cooldown_s: 300
+    scale_out_cooldown_s: 60
 
-local:
+# ---- CPU / test: FastAPI wrapping Predictor (no Triton) ----------------------------------
+cpu_test:
+  serving: fastapi             # fastapi | serverless (scale-to-zero, cheapest for sporadic test)
   port: 8080
 
-# `analyze` (serve_analyzer.py) — POST-DEPLOY serving-param tuning, driven by REAL traffic.
-# Workflow: deploy with defaults -> capture real requests from the live endpoint into
-# traffic_file -> `analyze` replays them while Model Analyzer sweeps the config and picks the
-# best under the latency budget. Run on a prod-class GPU host (matches sagemaker.instance_type).
+# ---- analyze (POST-deploy serving-param tuning via Model Analyzer, GPU host) --------------
 analyze:
-  traffic_file: null             # JSONL of REAL captured requests ({"text": ...} per line)
-  latency_budget_ms: 50          # p99 ceiling; configs above are dropped
-  max_instance_count: 4          # search GPU instance_group count up to N
-  max_batch_size: 64             # search dynamic_batching / max_batch_size up to N
+  traffic_file: null           # JSONL of REAL captured requests ({"text": ...} per line)
+  latency_budget_ms: 50
+  max_instance_count: 4
+  max_batch_size: 64
