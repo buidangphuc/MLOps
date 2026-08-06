@@ -17,7 +17,10 @@ model_source: local            # local | registry
 model_version: latest          # v3 | latest — env MODEL_VERSION overrides this at run time
 registry:                      # used when model_source: registry (mirror params.yaml push coords)
   name: GlinerNER
-  s3_bucket: genai-vsdia       # where the model was pushed (v1 lives here)
+  # bucket/prefix/region are read from the ENVIRONMENT first (pick a .env.<env> file:
+  # test/staging), falling back to these. Keep the real bucket out of committed config:
+  #   S3_BUCKET, S3_PREFIX, AWS_REGION   (see .env.test.example / .env.staging.example)
+  s3_bucket: null              # set S3_BUCKET in your .env.<env>
   s3_prefix: registry
   region: ap-southeast-1
 

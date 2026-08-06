@@ -36,10 +36,14 @@ def _resolve_weights(sv):
         return None
     reg = sv.get("registry") or {}
     version = os.environ.get("MODEL_VERSION") or sv.get("model_version") or "latest"
+    # Infra coords come from the environment first (pick a `.env.<env>` file: test/staging),
+    # falling back to serving.yaml. Keeps real bucket names out of the committed config.
+    bucket = os.environ.get("S3_BUCKET") or reg.get("s3_bucket")
+    prefix = os.environ.get("S3_PREFIX") or reg.get("s3_prefix")
+    region = os.environ.get("AWS_REGION") or os.environ.get("AWS_DEFAULT_REGION") or reg.get("region")
     from src.datascience.registry.s3 import S3Registry
 
-    r = S3Registry(bucket=reg.get("s3_bucket"), prefix=reg.get("s3_prefix"),
-                   region=reg.get("region"), name=reg.get("name") or "GlinerNER")
+    r = S3Registry(bucket=bucket, prefix=prefix, region=region, name=reg.get("name") or "GlinerNER")
     log.info(f"pulling weights from S3 registry: {r.name} version={version}")
     return r.pull(version, paths.REGISTRY_CACHE)
 

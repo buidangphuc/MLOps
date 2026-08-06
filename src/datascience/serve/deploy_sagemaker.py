@@ -14,6 +14,7 @@ and refuses without creds/config. The real run happens on the AWS side.
 """
 
 import json
+import os
 import tarfile
 import time
 
@@ -23,11 +24,35 @@ from src.datascience.constants import paths
 
 _WAIT_TIMEOUT_S = 1800
 
+# Infra coords resolved from the environment first (choose a `.env.<env>` file: test/staging),
+# else serving.yaml — so the same code targets test vs staging by swapping the env file and no
+# real bucket/role lands in committed config.
+_ENV_KEYS = {
+    "s3_bucket": ["S3_BUCKET"],
+    "s3_prefix": ["S3_MME_PREFIX", "S3_PREFIX"],
+    "region": ["AWS_REGION", "AWS_DEFAULT_REGION"],
+    "role_arn": ["SAGEMAKER_EXECUTION_ROLE"],
+    "triton_image": ["TRITON_IMAGE"],
+}
+
+
+def _apply_env(sm):
+    """Overlay env vars onto serving.sagemaker in place (env wins over serving.yaml)."""
+    for key, envs in _ENV_KEYS.items():
+        for e in envs:
+            if os.environ.get(e):
+                sm[key] = os.environ[e]
+                break
+    return sm
+
 
 def _require(sm, keys):
     missing = [k for k in keys if not sm.get(k)]
     if missing:
-        raise ValueError(f"set serving.sagemaker.{missing} in serving.yaml before deploying")
+        raise ValueError(
+            f"set serving.sagemaker.{missing} (or the matching env var in your .env.<env>) "
+            "before deploying"
+        )
 
 
 def _instance_type(sv, sm) -> str:
@@ -39,7 +64,7 @@ def upload_mme(sv) -> str:
     prefix URI that MME's ModelDataUrl points at."""
     import boto3
 
-    sm = sv.sagemaker
+    sm = _apply_env(sv.sagemaker)
     _require(sm, ["s3_bucket", "s3_prefix"])
     tars = sorted(paths.MME_TARS.glob("*.tar.gz"))
     if not tars:
@@ -58,7 +83,7 @@ def upload_mme(sv) -> str:
 def deploy(endpoint_name=None):
     cm = ConfigurationManager()
     sv = cm.serving()
-    sm = sv.sagemaker
+    sm = _apply_env(sv.sagemaker)
     _require(sm, ["s3_bucket", "s3_prefix", "role_arn", "triton_image"])
     if str(sm.mode) != "MultiModel":
         raise ValueError("this deployer targets MME; set serving.sagemaker.mode: MultiModel")
@@ -152,7 +177,7 @@ def test_endpoint(endpoint_name, text="cho thuê căn hộ 2 phòng ngủ quận
     import boto3
 
     cm = ConfigurationManager()
-    sm = cm.serving().sagemaker
+    sm = _apply_env(cm.serving().sagemaker)
     rt = boto3.client("sagemaker-runtime", region_name=sm.region)
     payload = json.dumps({"inputs": [{"name": "text_input", "shape": [1, 1],
                                       "datatype": "BYTES", "data": [text]}]})
