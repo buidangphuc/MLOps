@@ -21,16 +21,16 @@
 
 Owns: `src/datascience/model.py`, `src/datascience/components/model_trainer.py`, `src/datascience/config/configuration.py`, `src/datascience/entity/config_entity.py`, `tests/test_finetune.py`
 
-- [ ] 3.1 QAT method in `model.py`/trainer: QAT-capable schemes `int8-dyn`, `int4-wo`; `supports(scheme, "infer")` checked before any step; torchao prepare → train → convert; write `quant_scheme.json`. Verify: tests "Scheme unsupported by the serving GPU" and "Scheme not QAT-capable".
-- [ ] 3.2 `load_trained` applies a recorded `quant_scheme.json` unless a scheme is passed. Verify: test "Scheme recorded and reused" with `quant.apply` stubbed.
-- [ ] 3.3 make test green
+- [x] 3.1 QAT method in `model.py`/trainer: QAT-capable schemes `int8-dyn`, `int4-wo`; `supports(scheme, "infer")` checked before any step; torchao prepare → train → convert; write `quant_scheme.json`. Verify: tests "Scheme unsupported by the serving GPU" and "Scheme not QAT-capable".
+- [x] 3.2 `load_trained` applies a recorded `quant_scheme.json` unless a scheme is passed. Verify: test "Scheme recorded and reused" with `quant.apply` stubbed.
+- [x] 3.3 make test green
 
 ## 4. Quant-vs-quality report
 
 Owns: `src/datascience/perf/report.py` (new), `src/datascience/perf/cli.py`, `tests/test_report.py` (new)
 
-- [ ] 4.1 Add `perf/report.py` and `datascience perf report [--role infer]` in `perf/cli.py`: rows from the stored sweep (chosen marked, reasons shown) and tune runs; write `report.md`/`report.csv`; MLflow log when tracking. Verify: tests "Infer results only", "No stored results for this box", "Chosen and rejected rows".
-- [ ] 4.2 make test green
+- [x] 4.1 Add `perf/report.py` and `datascience perf report [--role infer]` in `perf/cli.py`: rows from the stored sweep (chosen marked, reasons shown) and tune runs; write `report.md`/`report.csv`; MLflow log when tracking. Verify: tests "Infer results only", "No stored results for this box", "Chosen and rejected rows".
+- [x] 4.2 make test green
 
 ## 5. Docs and end-to-end check
 
