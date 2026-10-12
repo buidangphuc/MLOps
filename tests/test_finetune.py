@@ -19,6 +19,7 @@ from datascience.infer.scoring import IGNORE, build_prompt, encode_example, pad_
 from datascience.model import bf16_ok, build_for_training, load_trained, merge_adapters, save_pretrained_atomic
 from datascience.perf import store
 from datascience.perf.hw import HardwareMismatch
+from datascience.perf.runner import Unsupported
 
 LABELS = ["Business", "Sci", "Sports", "World"]
 WORDS = ["<pad>", "<eos>", "<unk>", "You", "classify", "news", "Topics", "Article", "Topic", ":", ".", ",",
@@ -178,9 +179,47 @@ def test_full_finetune_trains_every_weight_and_pads_with_eos(tiny_dir, cm):
     assert tok.pad_token_id is not None
 
 
-def test_qat_is_not_built_yet(tiny_dir, cm):
-    with pytest.raises(NotImplementedError, match="group 3"):
-        ModelTrainer(_trainer_cfg(cm, tiny_dir, "qat")).train()
+def test_qat_scheme_the_serving_gpu_cannot_run_stops_before_any_step(tmp_artifacts, tiny_dir, cm, monkeypatch):
+    def boom(*a, **k):
+        raise AssertionError("a training step ran")
+
+    monkeypatch.setattr(ModelTrainer, "build_trainer", boom)
+    cfg = _trainer_cfg(cm, tiny_dir, "qat")
+    cfg = dataclasses.replace(cfg, finetune=dataclasses.replace(cfg.finetune, qat_scheme="int4-wo"))
+    with pytest.raises(Unsupported, match=r"int4-wo.*T4.*7\.5"):
+        ModelTrainer(cfg).train()
+
+
+def test_qat_scheme_must_be_qat_capable(tmp_artifacts, tiny_dir, cm, tmp_path):
+    cfg = _trainer_cfg(cm, tiny_dir, "qat")
+    cfg = dataclasses.replace(cfg, finetune=dataclasses.replace(cfg.finetune, qat_scheme="nf4"))
+    with pytest.raises(ValueError, match=r"int8-dyn.*int4-wo"):
+        ModelTrainer(cfg).train()
+
+    params = yaml.safe_load(paths.PARAMS_FILE.read_text())
+    params["finetune"].update(method="qat", qat={"scheme": "nf4"})
+    f = tmp_path / "params.yaml"
+    f.write_text(yaml.safe_dump(params))
+    with pytest.raises(ValueError, match=r"int8-dyn.*int4-wo"):
+        ConfigurationManager(params_filepath=f)
+
+
+def test_load_trained_reuses_the_recorded_scheme(tiny_dir, tmp_path, monkeypatch):
+    import shutil
+
+    from datascience.perf import quant
+
+    model_dir = tmp_path / "qat_model"
+    shutil.copytree(tiny_dir, model_dir)
+    seen = []
+    monkeypatch.setattr(quant, "apply", lambda m, scheme: seen.append(scheme) or m)
+
+    load_trained(model_dir, "cpu")
+    assert seen == []                                    # nothing recorded -> nothing applied
+    (model_dir / "quant_scheme.json").write_text(json.dumps({"scheme": "int8-dyn"}))
+    load_trained(model_dir, "cpu")
+    load_trained(model_dir, "cpu", scheme="bf16")        # an explicit scheme wins
+    assert seen == ["int8-dyn", "bf16"]
 
 
 def test_load_trained_applies_a_scheme(tiny_dir):

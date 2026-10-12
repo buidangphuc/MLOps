@@ -15,6 +15,39 @@ import tempfile
 
 from pathlib import Path
 
+from datascience.utils.io import atomic_write_json
+
+QAT_SCHEMES = ("int8-dyn", "int4-wo")   # torchao schemes with a QAT prepare/convert path
+QUANT_SCHEME_FILE = "quant_scheme.json"
+
+
+def check_qat_scheme(scheme) -> None:
+    """QAT trains for `scheme`, so it must be QAT-capable and runnable on the INFER target."""
+    from datascience.perf import quant
+    from datascience.perf.hw import load_targets, supports
+    from datascience.perf.runner import Unsupported
+
+    if scheme not in QAT_SCHEMES:
+        raise ValueError(f"finetune.qat.scheme {scheme!r} is not QAT-capable; choose one of {list(QAT_SCHEMES)}")
+    infer = load_targets()["infer"]
+    if not supports(quant.SCHEMES[scheme][0], "infer"):
+        raise Unsupported(f"QAT scheme {scheme} is not supported by the infer target "
+                          f"{infer['gpu_name']} (compute capability {infer['compute_capability']})")
+
+
+def qat_step(model, scheme, step: str):
+    """torchao QAT `prepare` (insert fake-quant) before training, `convert` (real quantized weights) after."""
+    from datascience.perf import quant
+
+    ao = quant._import("torchao.quantization")
+    try:
+        from torchao.quantization.qat import QATConfig
+    except ImportError as e:
+        raise quant.Unsupported("installed torchao has no QATConfig (pip install -e .[quant])") from e
+    base = getattr(ao, quant._TORCHAO[scheme])()
+    ao.quantize_(model, QATConfig(base, step=step))
+    return model
+
 
 def load_label_map(path):
     obj = json.loads(Path(path).read_text(encoding="utf-8"))
@@ -98,7 +131,8 @@ def merge_adapters(model, cfg):
 
 
 def load_trained(model_dir, device: str = "cpu", scheme=None):
-    """(model, tokenizer) from a saved dir, optionally under a perf/quant scheme. Load-kind schemes
+    """(model, tokenizer) from a saved dir, optionally under a perf/quant scheme (default: the one
+    recorded in quant_scheme.json by a QAT run; an explicit scheme wins). Load-kind schemes
     (nf4, bnb-int8) quantize while loading and place the model themselves; the rest load, then transform."""
     from transformers import AutoModelForCausalLM, AutoTokenizer
 
@@ -107,6 +141,9 @@ def load_trained(model_dir, device: str = "cpu", scheme=None):
     tokenizer = AutoTokenizer.from_pretrained(model_dir)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
+    recorded = Path(model_dir) / QUANT_SCHEME_FILE
+    if scheme is None and recorded.exists():   # a QAT model is served under the scheme it was trained for
+        scheme = json.loads(recorded.read_text(encoding="utf-8"))["scheme"]
     if scheme and quant.SCHEMES.get(scheme, (None, None))[1] == "load":
         model = quant.apply(model_dir, scheme)
     else:

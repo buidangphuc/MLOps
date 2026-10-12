@@ -13,6 +13,7 @@ from datascience.entity.config_entity import (
     RegistryConfig,
     TaskConfig,
 )
+from datascience.model import QAT_SCHEMES
 from datascience.utils.common import read_yaml
 
 _REQUIRED_SECTIONS = [
@@ -54,8 +55,10 @@ class ConfigurationManager:
         method = self.params.finetune.method
         if method not in _FINETUNE_METHODS:
             raise ValueError(f"finetune.method '{method}' is not allowed; choose one of {list(_FINETUNE_METHODS)}")
-        if method == "qat" and not self.params.finetune.get("qat", {}).get("scheme"):
-            raise ValueError("finetune.method qat needs finetune.qat.scheme")
+        if method == "qat":
+            scheme = self.params.finetune.get("qat", {}).get("scheme")
+            if scheme not in QAT_SCHEMES:
+                raise ValueError(f"finetune.method qat needs finetune.qat.scheme in {list(QAT_SCHEMES)}, got {scheme!r}")
         if "{text}" not in self.params.task.prompt_template:
             raise ValueError("task.prompt_template must contain {text}")
 
