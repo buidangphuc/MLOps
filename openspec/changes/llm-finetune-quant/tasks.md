@@ -34,6 +34,6 @@ Owns: `src/datascience/perf/report.py` (new), `src/datascience/perf/cli.py`, `te
 
 ## 5. Docs and end-to-end check
 
-- [ ] 5.1 Update `.agents/ml-pipeline-repo/SKILL.md` (known-broken narrowed to serving/package, "fine-tune methods vs perf knobs" rule, schemes pointer, trainer hook wired) and README (`quant` extra, `perf report`, methods). Verify: no stale reference to `params.gliner` or `tuning.lora`.
+- [x] 5.1 Update `.agents/ml-pipeline-repo/SKILL.md` (known-broken narrowed to serving/package, "fine-tune methods vs perf knobs" rule, schemes pointer, trainer hook wired) and README (`quant` extra, `perf report`, methods). Verify: no stale reference to `params.gliner` or `tuning.lora`.
 - [ ] 5.2 CPU smoke: Qwen2.5-0.5B, `sample_size: 200`, `max_steps: 5`, run `ingest → evaluate` for `full` and `lora`; `perf tune infer --entry datascience.infer.perf_entry:target` with `fp32, int8-dyn`; `perf report`. Verify: metrics.json, stored result with quality_drop, printed report.
-- [ ] 5.3 make test green
+- [x] 5.3 make test green

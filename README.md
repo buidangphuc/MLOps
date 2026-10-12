@@ -100,7 +100,7 @@ Tracking is local MLflow: `mlflow ui --backend-store-uri sqlite:///mlflow.db`.
 ## Status
 
 Built: fine-tune methods (full/LoRA/QLoRA/QAT), S3 registry + staging/production pointers + rollback,
-GPU perf platform with PTQ schemes and a quant-vs-quality report (offline tests + CPU smoke; GPU
+GPU perf platform with PTQ schemes and a quant-vs-quality report (offline tests only so far; real-model and GPU
 paths run on a CUDA box). **Broken:** serving/packaging (still GLiNER-shaped). **Deferred:** wiring
 tuned perf configs into package / serve, production monitoring (drift + retrain), CI/CD.
 
