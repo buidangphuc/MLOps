@@ -6,12 +6,13 @@ kernels, and profiles any workload. **Every tuned result is bound to the GPU it 
 training and inference GPUs are declared separately in `config/hardware.yaml`, and a config
 tuned on GPU A is refused on GPU B.
 
-> `main` is mid-migration to GLiNER NER: train/eval/infer are broken here (see
-> `.agents/ml-pipeline-repo/SKILL.md`). Serving, registry, and the perf platform work.
+> Serving/packaging (`serve/local.py`, `package.py`, `optimize.py`, `serve_analyzer`) are still
+> GLiNER-shaped and broken; train, eval, infer, tune and perf work (see `.agents/ml-pipeline-repo/SKILL.md`).
 
-A production-grade pipeline that fine-tunes a pretrained Hugging Face transformer for text
-classification, validates it like an expert (calibration, confidence intervals, per-class error
-analysis), **gates** it on a metric, **versions** it with full lineage, and **serves** it.
+A pipeline that fine-tunes a causal LM (Qwen2.5-0.5B-Instruct, AG News posed as generation; the
+predicted label is the one with the highest log-likelihood), validates it (calibration, confidence
+intervals, per-class error analysis), **gates** it on a metric, and **versions** it with full lineage.
+Fine-tune methods: `full`, `lora`, `qlora`, `qat` (`finetune.method` in `params.yaml`), compared as `tune` variants.
 
 The **pipeline is the product** — generic via config, not tied to any one model or dataset.
 Philosophy (fastai-style): a minimal core that runs immediately with sane defaults; every advanced
@@ -20,7 +21,7 @@ capability (DAPT, LoRA, TensorBoard histograms, ONNX serving) is **opt-in**.
 ## Pipeline
 
 ```
-ingest → validate (gate) → transform (stratified split + label map) → train (HF Trainer)
+ingest → validate (gate) → transform (stratified split + label map) → train (HF Trainer, causal-LM SFT)
        → evaluate (metrics + calibration + CI + error analysis) → gate → local registry
 
 tuning loop:  experiments.yaml (variants) → tune (train+eval+rank, 1 MLflow run each) → promote <winner>
@@ -30,17 +31,14 @@ serving:      torch (default)   or   optimize → package → serve / deploy  (T
 ## Quickstart
 
 ```bash
-pip install -e .[dev,cpu]                   # dev / training stack (+ [trt] on a GPU box)
+pip install -e .[dev,cpu]                   # dev / training stack (+ [trt], [quant] on a GPU box)
 
 python main.py run                            # full pipeline (downloads a sample dataset on first run)
 python main.py infer --text "Central bank raises interest rates"
-python main.py serve --backend local --port 8080   # FastAPI endpoint: text -> {label, score}
 ```
 
 Use your own data: set `ingestion.dataset_name: null` in `config/params.yaml` and drop a
-`{"text": ..., "label": ...}` JSONL at `artifacts/data_ingestion/data.jsonl`. Any binary or
-multi-class text classification works without code changes (label map + metrics are derived from
-your data).
+`{"text": ..., "label": ...}` JSONL at `artifacts/data_ingestion/data.jsonl`. Label names and metrics are derived from your data.
 
 ## Commands
 
@@ -64,6 +62,8 @@ your data).
 | `perf tune train --entry m:f` | precision / TF32 / compile / checkpointing / workers, auto max-fit batch, effective batch constant |
 | `perf tune kernel <name>` | OpenAI-Triton launch-config autotune per shape, checked vs torch |
 | `perf profile train\|infer --entry m:f` | torch.profiler trace + top kernels + NVML util |
+| `perf tune infer --entry datascience.infer.perf_entry:target` | the real model: PTQ schemes (`perf/quant.py`) x batch, quality-guarded |
+| `perf report` | quant-vs-quality table (`report.md` / `.csv`) from the stored infer sweep |
 | `perf show` | stored tuned results by role / `hw_id` |
 
 `--gpu N` on any stage sets `CUDA_VISIBLE_DEVICES`. `dvc repro` runs the same DAG with caching.
@@ -82,7 +82,7 @@ endpoint (text in → `{label, score}`); it holds no model internals.
 
 | Use | Install |
 |---|---|
-| Dev / training / perf | `pip install -e .[dev,cpu]` (`[trt]` adds TensorRT on a GPU box) |
+| Dev / training / perf | `pip install -e .[dev,cpu]` (`[trt]` adds TensorRT, `[quant]` adds bitsandbytes + torchao; GPU box) |
 | Serving — torch (default) | the model stack (torch + transformers; = the dev install) |
 | Serving — ONNX (opt-in, torch-free) | `pip install -e .[cpu]` **or** `.[gpu]` |
 
@@ -99,9 +99,9 @@ Tracking is local MLflow: `mlflow ui --backend-store-uri sqlite:///mlflow.db`.
 
 ## Status
 
-Built: serving (FastAPI CPU, Triton MME, SageMaker), S3 registry + staging/production pointers +
-rollback, GPU perf platform (offline tests + CPU smoke; GPU paths run on a CUDA box). **Broken on
-`main`:** train/eval/infer (half-migrated to GLiNER). **Deferred:** wiring tuned perf configs into the
-trainer / package / serve, production monitoring (drift + retrain), CI/CD.
+Built: fine-tune methods (full/LoRA/QLoRA/QAT), S3 registry + staging/production pointers + rollback,
+GPU perf platform with PTQ schemes and a quant-vs-quality report (offline tests only so far; real-model and GPU
+paths run on a CUDA box). **Broken:** serving/packaging (still GLiNER-shaped). **Deferred:** wiring
+tuned perf configs into package / serve, production monitoring (drift + retrain), CI/CD.
 
 Conventions for editing the code live in [.agents/ml-pipeline-repo/SKILL.md](.agents/ml-pipeline-repo/SKILL.md).

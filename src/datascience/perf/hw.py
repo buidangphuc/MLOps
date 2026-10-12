@@ -20,7 +20,7 @@ from datascience.constants import paths
 ROLES = ("train", "infer")
 
 # min compute capability per feature (NVIDIA arch tables)
-_MIN_CC = {"fp16": 7.0, "bf16": 8.0, "tf32": 8.0, "fp8": 8.9}
+_MIN_CC = {"fp16": 7.0, "bf16": 8.0, "tf32": 8.0, "fp8": 8.9, "int8": 7.0, "int4": 8.0, "nf4": 7.0}
 
 
 class HardwareMismatch(RuntimeError):
@@ -36,6 +36,16 @@ def _version(*dists):
     return None
 
 
+def _visible_handles(pynvml) -> list:
+    """NVML sees every GPU on the box; honour CUDA_VISIBLE_DEVICES (index or UUID) like torch."""
+    env = os.environ.get("CUDA_VISIBLE_DEVICES")
+    if env is None:
+        return [pynvml.nvmlDeviceGetHandleByIndex(i) for i in range(pynvml.nvmlDeviceGetCount())]
+    ids = [d.strip() for d in env.split(",") if d.strip()]
+    return [pynvml.nvmlDeviceGetHandleByIndex(int(d)) if d.isdigit()
+            else pynvml.nvmlDeviceGetHandleByUUID(d) for d in ids]
+
+
 def _gpus() -> tuple[list[dict], dict]:
     try:
         import pynvml
@@ -45,8 +55,7 @@ def _gpus() -> tuple[list[dict], dict]:
         return [], {}
     try:
         gpus = []
-        for i in range(pynvml.nvmlDeviceGetCount()):
-            h = pynvml.nvmlDeviceGetHandleByIndex(i)
+        for h in _visible_handles(pynvml):
             name = pynvml.nvmlDeviceGetName(h)
             major, minor = pynvml.nvmlDeviceGetCudaComputeCapability(h)
             gpus.append({
@@ -129,7 +138,7 @@ def assert_role(role: str, fp: dict | None = None) -> dict:
 
 
 def supports(feature: str, role: str, targets: dict | None = None) -> bool:
-    """Does the role's TARGET GPU support `feature` (bf16/fp16/tf32/fp8)? Decided from the
+    """Does the role's TARGET GPU support `feature` (bf16/fp16/tf32/fp8/int8/int4/nf4)? Decided from the
     target, not from the current box — a bf16 serving config is wrong for a T4 endpoint even
     if it was measured on an A100."""
     cc = (targets or load_targets())[role].get("compute_capability")

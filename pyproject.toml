@@ -30,14 +30,17 @@ cpu = ["onnxruntime"]
 gpu = ["onnxruntime-gpu"]
 # Opt-in TensorRT for `perf tune infer` (ORT TensorRT EP). GPU box only, with the gpu extra.
 trt = ["tensorrt"]
+# Opt-in quantization (QLoRA nf4 / torchao schemes). GPU box only.
+quant = ["bitsandbytes>=0.45", "torchao>=0.12"]
 # DEV / training / experimentation / ops — everything beyond prod serving:
 dev = [
   # training
   "torch",
+  "transformers>=5.0",     # trainer uses the 5.x TrainingArguments API (warmup_steps ratio, dtype=)
   "datasets",
   "accelerate",
   "scikit-learn",
-  "peft",                  # R5 LoRA / PEFT
+  "peft",                  # LoRA / QLoRA adapters
   "tensorboard",           # opt-in TB scalar logs + histograms
   # tracking + data versioning
   "mlflow",

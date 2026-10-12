@@ -1,0 +1,16 @@
+schema: spec-driven
+
+# Project context shown to AI when creating artifacts. The rules themselves live in
+# .agents/ml-pipeline-repo/SKILL.md (single source of truth) — read it, don't restate it here.
+context: |
+  Python MLOps repo, package `datascience` (src/datascience), Python 3.11, HF transformers + torch.
+  Three layers: fine-tuning pipeline, serving/registry platform, GPU perf platform (perf/).
+  Rules, invariants and gotchas: .agents/ml-pipeline-repo/SKILL.md.
+  Tests: `make test` (offline, no GPU, no downloads; `tmp_artifacts` fixture in tests/conftest.py).
+  Only pre-commit hook: detect-secrets. All artifacts are written in English.
+
+rules:
+  specs:
+    - Every requirement has at least one `#### Scenario:` that an offline pytest can check
+  tasks:
+    - One section per implementation phase; each section ends with "make test green"

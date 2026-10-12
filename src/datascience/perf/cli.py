@@ -19,6 +19,9 @@ def add_parser(sub) -> None:
     tn.add_argument("--role", choices=ROLES, default="train",
                     help="kernel only: which target the result binds to")
     tn.add_argument("--no-track", action="store_true", help="skip MLflow logging")
+    rp = ps.add_parser("report", help="quant-vs-quality table from this box's stored infer sweep")
+    rp.add_argument("--role", choices=["infer"], default="infer")
+    rp.add_argument("--no-track", action="store_true", help="skip MLflow logging")
     pr = ps.add_parser("profile", help="torch.profiler + NVML over N steady-state steps")
     pr.add_argument("workload", choices=["infer", "train"])
     pr.add_argument("--entry", required=True, help="module:fn returning the model/trainer target")
@@ -60,7 +63,8 @@ def _build(workload: str, entry: str, cfg: dict):
     if workload == "train":
         from datascience.perf.workloads.train import TrainWorkload
 
-        return TrainWorkload(target, cfg["effective_batch"], cfg["steps"], cfg["warmup_steps"])
+        return TrainWorkload(target, cfg["effective_batch"], cfg["steps"], cfg["warmup_steps"],
+                             amortize_steps=cfg.get("amortize_steps"))
     raise ValueError(workload)
 
 
@@ -107,6 +111,10 @@ def dispatch(args) -> None:
         fp = assert_role(args.workload)          # fail before loading any model on the wrong box
         sweep(_build(args.workload, args.entry, cfg), cfg["grid"], cfg["objective"],
               cfg.get("mode", "max"), cfg.get("constraints"), fp=fp, track=not args.no_track)
+    elif args.perf_cmd == "report":
+        from datascience.perf.report import build_report
+
+        print(build_report(track=not args.no_track))
     elif args.perf_cmd == "profile":
         from datascience.perf.profile import profile_workload
         from datascience.perf.runner import resolve_entry

@@ -15,7 +15,7 @@ import os
 
 
 def build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(prog="datascience", description="Text-classification fine-tune pipeline")
+    p = argparse.ArgumentParser(prog="datascience", description="LLM fine-tune + quantization pipeline")
     p.add_argument("--gpu", help="GPU id(s) -> sets CUDA_VISIBLE_DEVICES")
     sub = p.add_subparsers(dest="command", required=True)
 

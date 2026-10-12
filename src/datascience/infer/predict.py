@@ -1,8 +1,9 @@
 """Inference: single text, batch, or batch-over-file (resumable).
 
-Loads the saved model + tokenizer + label map, and applies the calibration
-temperature (if present) so scores are trustworthy. Batched forward passes for
-throughput; bad input rows are skipped, not fatal.
+Loads the saved causal LM + tokenizer + label map and scores every candidate label by
+log-likelihood (infer/scoring.py), applying the calibration temperature (if present) so
+scores are trustworthy. Batched forward passes for throughput; bad input rows are skipped,
+not fatal.
 """
 
 import json
@@ -12,6 +13,7 @@ from pathlib import Path
 from datascience import log
 from datascience.config.configuration import ConfigurationManager
 from datascience.constants import paths
+from datascience.infer.scoring import score_labels
 from datascience.metrics import softmax
 from datascience.model import load_label_map, load_trained
 from datascience.utils.runtime import pick_device
@@ -19,15 +21,17 @@ from datascience.utils.runtime import pick_device
 
 class Predictor:
 
-    def __init__(self, model_dir=None, device=None, max_length=None):
+    def __init__(self, model_dir=None, device=None, scheme=None, max_length=None):
         ev = ConfigurationManager().evaluation()
         self.text_field = ev.text_field
+        self.task = ev.task
         self.max_length = max_length or ev.max_length
         self.device = device or pick_device()
 
         model_dir = Path(model_dir or paths.MODEL_DIR)
-        self.model, self.tokenizer = load_trained(model_dir, self.device)
-        _, self.id2label = load_label_map(paths.LABEL_MAP)
+        self.model, self.tokenizer = load_trained(model_dir, self.device, scheme=scheme)
+        _, id2label = load_label_map(paths.LABEL_MAP)
+        self.labels = [id2label[i] for i in sorted(id2label)]
 
         temp_file = model_dir / "temperature.json"
         self.temperature = (
@@ -38,20 +42,15 @@ class Predictor:
         return self.predict_batch([text])[0]
 
     def predict_batch(self, texts, batch_size: int = 32) -> list:
-        import torch
-
+        scores = score_labels(
+            self.model, self.tokenizer, self.task, list(texts), self.labels,
+            max_length=self.max_length, batch_size=batch_size,
+        )
+        probs = softmax(scores / self.temperature)
         results = []
-        for i in range(0, len(texts), batch_size):
-            chunk = texts[i : i + batch_size]
-            enc = self.tokenizer(
-                chunk, truncation=True, max_length=self.max_length, padding=True, return_tensors="pt"
-            ).to(self.device)
-            with torch.no_grad():
-                logits = self.model(**enc).logits.cpu().numpy()
-            probs = softmax(logits / self.temperature)
-            for p in probs:
-                idx = int(p.argmax())
-                results.append({"label": self.id2label[idx], "score": float(p[idx])})
+        for p in probs:
+            idx = int(p.argmax())
+            results.append({"label": self.labels[idx], "score": float(p[idx])})
         return results
 
     def predict_file(self, input_file, output_file, batch_size: int = 32) -> int:

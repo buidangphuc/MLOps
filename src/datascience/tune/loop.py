@@ -58,10 +58,19 @@ def run_tuning():
         shutil.rmtree(paths.CKPT_DIR, ignore_errors=True)
 
         cm = ConfigurationManager(params_filepath=config_path)
-        run_id = _train_eval_one(cm, name)
+        paths.TRAIN_STATS.unlink(missing_ok=True)
+        try:
+            run_id = _train_eval_one(cm, name)
+        except Exception as e:   # one broken variant must not cost the others their results
+            log.error(f"variant '{name}' failed: {e!r}")
+            results.append({"variant": name, "run_id": None, "passed": False, "objective": None,
+                            "metrics": {}, "dir": str(run_dir), "error": repr(e)})
+            continue
 
         metrics = json.loads(paths.METRICS_FILE.read_text())
         scalar = {k: v for k, v in metrics.items() if isinstance(v, (int, float))}
+        if paths.TRAIN_STATS.exists():
+            scalar.update({k: v for k, v in json.loads(paths.TRAIN_STATS.read_text()).items() if v is not None})
         passed = _gate_passed(cm, metrics)
 
         # snapshot model + metrics so this variant can be promoted after the loop
@@ -86,6 +95,9 @@ def run_tuning():
         {"experiment": experiment_name, "objective": objective, "runs": results}, indent=2
     ))
     _print_ranking(objective, results)
+    failed = [r["variant"] for r in results if "error" in r]
+    if failed:
+        raise SystemExit(f"variants failed: {failed} (see the log; the others are ranked in {paths.TUNE_RESULTS})")
     return results
 
 
@@ -133,6 +145,6 @@ def _print_ranking(objective, results):
     log.info(f"===== tuning ranking (by {objective}) =====")
     for i, r in enumerate(results, 1):
         val = f"{r['objective']:.4f}" if r["objective"] is not None else "n/a"
-        gate = "PASS" if r["passed"] else "FAIL"
+        gate = "ERROR" if "error" in r else "PASS" if r["passed"] else "FAIL"
         log.info(f"  {i}. {r['variant']:<20} {objective}={val}  gate={gate}")
     log.info("promote the winner with:  python main.py promote <variant>")

@@ -1,10 +1,13 @@
-# Base EXPERIMENT config: data + model + training + metrics + gate + tracking + registry
-# + an off-by-default `tuning:` block. One run of `train` = one experiment; MLflow
-# versions its hyperparams + metrics. Vary these PER-VARIANT in experiments.yaml and
-# run `tune` to compare. Serving knobs live in serving.yaml; paths in constants/paths.py.
+# Base EXPERIMENT config: data + model + task + fine-tune + training + metrics + gate + tracking
+# + registry. One run of `train` = one experiment; MLflow versions its hyperparams + metrics.
+# Vary these PER-VARIANT in experiments.yaml and run `tune` to compare. Serving knobs live in
+# serving.yaml; GPU targets in hardware.yaml; paths in constants/paths.py.
+#
+# The task is a causal-LM SFT: the classification label is the completion, and evaluation
+# picks the label with the highest log-likelihood (infer/scoring.py).
 
 ingestion:
-  dataset_name: ag_news      # HF dataset pulled as a sample for first run.
+  dataset_name: fancyzhx/ag_news # HF dataset pulled as a sample for first run.
   sample_size: 3000          # null = full split. To use your own data: set
                              # dataset_name: null and drop a JSONL at artifacts/data_ingestion/data.jsonl
 
@@ -18,17 +21,32 @@ data:
   group_field: null          # set a field to prevent group leakage (opt-in)
 
 model:
-  base_model: distilbert-base-uncased   # fine-tune from pretrained (not from scratch)
-  max_length: 128
+  base_model: Qwen/Qwen2.5-0.5B-Instruct   # fine-tune from pretrained (not from scratch)
+  max_length: 256                          # prompt + completion tokens (article text is trimmed to fit)
+
+task:
+  system_prompt: You are a news topic classifier. Reply with the topic name only.
+  # {text} = the article, {labels} = candidate labels (from TRAIN only), comma-separated
+  prompt_template: "Classify the news article into one of these topics: {labels}.\n\nArticle: {text}\n\nTopic:"
+
+finetune:
+  method: full               # full | lora | qlora | qat — compared as variants in experiments.yaml
+  lora:                      # used by lora and qlora (they want a higher lr: see experiments.yaml)
+    r: 16
+    alpha: 32
+    dropout: 0.05
+    target_modules: null     # null = PEFT default for the architecture (q_proj, v_proj for Qwen)
+  qat:
+    scheme: int8-dyn         # used by method qat: the scheme the infer target must support
 
 training:
-  epochs: 2
-  lr: 5.0e-5
-  train_batch_size: 16
-  eval_batch_size: 32
-  weight_decay: 0.01
-  warmup_ratio: 0.1
-  patience: 2                # early stopping
+  epochs: 1
+  lr: 2.0e-5                 # full fine-tune; lora/qlora variants raise it
+  train_batch_size: 8
+  eval_batch_size: 16
+  weight_decay: 0.0
+  warmup_ratio: 0.05
+  patience: 2                # early stopping on eval_loss
   save_total_limit: 2
   seed: 42
   max_steps: -1              # >0 caps steps (time-budget guard); -1 = use epochs
@@ -36,7 +54,7 @@ training:
 
 metrics:
   compute: [accuracy, macro_f1, micro_f1]   # accuracy|macro_f1|micro_f1|pr_auc|mcc
-  objective: macro_f1        # best-model selection + gate reference
+  objective: macro_f1        # what the gate reads (the trainer keeps the lowest-eval_loss checkpoint)
   per_class: true            # per-class P/R/F1 + confusion matrix
   error_dump: true           # write misclassified examples
   bootstrap_ci: true         # metric +/- 95% CI on test
@@ -51,40 +69,22 @@ gate:
 
 tracking:
   backend: mlflow            # mlflow | tensorboard | none
-  experiment_name: text-clf
+  experiment_name: topic-sft
   tensorboard: false         # also write TB scalar logs alongside the backend (-> logs/tensorboard)
   log_histograms: false      # TB-only: weight + gradient histograms every N steps (debug convergence)
 
 registry:
-  name: TextClassifier
+  name: TopicLLM
   remote:
     backend: none            # none | mlflow | sagemaker (remote not built yet)
 
-# ----------------------------------------------------------------------------
-# Tuning rungs (advanced). All off => plain fine-tune above. Climb a rung only when
-# eval signals demand it. To COMPARE rungs, set them per-variant in experiments.yaml
-# and run `python main.py tune` — don't hand-tweak here run after run.
-#   R1 backbone -> change model.base_model        R2 data -> fix labels + `sanity`
-#   R3 recipe (below)   R4 DAPT -> `python main.py dapt`   R5 LoRA (below)
-# ----------------------------------------------------------------------------
-tuning:
-  # R3 — training recipe (cheap, stabilises fine-tuning; verifiable on any box)
-  freeze_encoder_layers: 0   # >0 freezes embeddings + the bottom N transformer layers
-  differential_lr: false     # true = encoder uses encoder_lr, classifier head uses training.lr
-  encoder_lr: 1.0e-5         # lower LR for the pretrained encoder when differential_lr
+# Opt-in: apply the training-throughput config tuned for this box (`datascience perf tune train`).
+# A result tuned on a different GPU stops training with a hardware-mismatch error.
+perf:
+  apply_tuned: false
 
-  # R5 — LoRA / PEFT (train small adapters instead of all weights; for big backbones)
-  lora: false                # true = wrap the model with LoRA adapters before training
-  lora_r: 8
-  lora_alpha: 16
-  lora_dropout: 0.05
-  lora_target_modules: null  # null = PEFT auto-picks (bert/roberta/gpt2/llama/...);
-                             # distilbert isn't auto-mapped -> set e.g. [q_lin, v_lin]
-
-  # R4 — DAPT (domain-adaptive pretraining). `python main.py dapt` continues masked-LM
-  # on your unlabeled domain text -> adapted backbone at artifacts/dapt; then point a
-  # variant's model.base_model to it. Heavy -> run on the GPU box.
-  dapt:
-    corpus: null             # JSONL with a `text` field (unlabeled domain text)
-    epochs: 1
-    mlm_probability: 0.15
+# DAPT (opt-in): `datascience dapt` continues causal-LM training on unlabeled domain text ->
+# adapted backbone at artifacts/dapt; point a variant's model.base_model at it. Heavy -> GPU box.
+dapt:
+  corpus: null               # JSONL with a `text` field
+  epochs: 1

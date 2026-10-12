@@ -30,6 +30,7 @@ DATA_VERSION = SPLIT_DIR / "data_version.json"   # content hash + row count -> l
 TRAINER_DIR = ARTIFACTS / "model_trainer"
 MODEL_DIR = TRAINER_DIR / "model"
 CKPT_DIR = TRAINER_DIR / "checkpoints"
+TRAIN_STATS = TRAINER_DIR / "train_stats.json"   # samples/s + peak memory of the last train run
 EVAL_DIR = ARTIFACTS / "model_evaluation"
 METRICS_FILE = EVAL_DIR / "metrics.json"
 SWEEP_FILE = EVAL_DIR / "threshold_sweep.json"   # per-threshold P/R/F1 on VAL (the sweep curve)

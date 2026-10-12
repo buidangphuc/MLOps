@@ -8,29 +8,26 @@
 # MLflow run (tagged variant=<name>), so they compare side by side. Nothing is promoted
 # automatically — you pick the winner after reading the ranking.
 
-experiment_name: text-clf-tuning
+experiment_name: topic-sft-tuning
 
 variants:
-  - name: baseline                 # params.yaml as-is
+  - name: baseline                 # params.yaml as-is: full fine-tune
 
-  - name: freeze-bottom6           # R3: freeze embeddings + bottom 6 layers
-    tuning:
-      freeze_encoder_layers: 6
+  - name: lora                     # adapters only; needs a higher lr than full fine-tuning
+    finetune: {method: lora}
+    training: {lr: 2.0e-4}
 
-  - name: differential-lr          # R3: low LR for the encoder, full LR for the head
-    tuning:
-      differential_lr: true
-      encoder_lr: 1.0e-5
+  - name: qlora                    # LoRA over a 4-bit nf4 base (quant extra, GPU box)
+    finetune: {method: qlora}
+    training: {lr: 2.0e-4}
 
-  # - name: roberta                # R1: swap the backbone (downloads weights)
+  - name: qat-int8                 # quantization-aware training for int8-dyn (group 3)
+    finetune: {method: qat, qat: {scheme: int8-dyn}}
+
+  # - name: qwen-1.5b              # swap the backbone (downloads weights)
   #   model:
-  #     base_model: roberta-base
+  #     base_model: Qwen/Qwen2.5-1.5B-Instruct
 
-  # - name: dapt-then-finetune     # R4: fine-tune from the DAPT-adapted backbone
-  #   model:                       #     (run `python main.py dapt` first)
+  # - name: dapt-then-finetune     # fine-tune from the DAPT-adapted backbone
+  #   model:                       #   (run `datascience dapt` first)
   #     base_model: artifacts/dapt
-
-  # - name: lora                   # R5: train LoRA adapters instead of full weights
-  #   tuning:
-  #     lora: true
-  #     lora_target_modules: [q_lin, v_lin]   # distilbert attn projections (auto for bert/roberta/...)
