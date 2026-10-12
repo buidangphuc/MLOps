@@ -20,6 +20,8 @@ def tmp_artifacts(tmp_path, monkeypatch):
         "EVAL_DIR": tmp_path / "model_evaluation",
         "METRICS_FILE": tmp_path / "model_evaluation" / "metrics.json",
         "PERF_DIR": tmp_path / "perf",
+        "TUNE_DIR": tmp_path / "tune_runs",
+        "TUNE_RESULTS": tmp_path / "tune_runs" / "results.json",
         "SPLIT_DIR": tmp_path / "data_transformation",
         "TRAIN_FILE": tmp_path / "data_transformation" / "train.jsonl",
         "VAL_FILE": tmp_path / "data_transformation" / "val.jsonl",

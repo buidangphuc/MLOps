@@ -7,7 +7,7 @@
 # picks the label with the highest log-likelihood (infer/scoring.py).
 
 ingestion:
-  dataset_name: ag_news      # HF dataset pulled as a sample for first run.
+  dataset_name: fancyzhx/ag_news # HF dataset pulled as a sample for first run.
   sample_size: 3000          # null = full split. To use your own data: set
                              # dataset_name: null and drop a JSONL at artifacts/data_ingestion/data.jsonl
 

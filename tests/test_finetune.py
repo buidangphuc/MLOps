@@ -78,7 +78,7 @@ def _trainer_cfg(cm, base_model, method="full", **over):
 # --- config ---------------------------------------------------------------------------
 
 def test_shipped_params_loads(cm):
-    assert cm.ingestion().dataset_name == "ag_news"
+    assert cm.ingestion().dataset_name == "fancyzhx/ag_news"
     assert cm.validation().label_field == "label"
     assert cm.transformation().val_size > 0
     t = cm.trainer()
