@@ -35,8 +35,9 @@ def check_qat_scheme(scheme) -> None:
                           f"{infer['gpu_name']} (compute capability {infer['compute_capability']})")
 
 
-def qat_step(model, scheme, step: str):
-    """torchao QAT `prepare` (insert fake-quant) before training, `convert` (real quantized weights) after."""
+def qat_prepare(model, scheme):
+    """torchao QAT `prepare`: insert fake-quant. No `convert`: the saved dir holds float weights and
+    `load_trained` applying the recorded scheme (same torchao base config) is the convert step."""
     from datascience.perf import quant
 
     ao = quant._import("torchao.quantization")
@@ -45,7 +46,7 @@ def qat_step(model, scheme, step: str):
     except ImportError as e:
         raise quant.Unsupported("installed torchao has no QATConfig (pip install -e .[quant])") from e
     base = getattr(ao, quant._TORCHAO[scheme])()
-    ao.quantize_(model, QATConfig(base, step=step))
+    ao.quantize_(model, QATConfig(base, step="prepare"))
     return model
 
 
@@ -111,6 +112,24 @@ def build_for_training(cfg):
         ))
         model.print_trainable_parameters()
     return model, tokenizer
+
+
+def unwrap_fake_quant(model):
+    """Replace torchao FakeQuantized* linears by plain nn.Linear (same float weights) so the saved
+    dir is an ordinary causal LM."""
+    import torch
+
+    for parent in list(model.modules()):
+        for name, child in list(parent.named_children()):
+            if isinstance(child, torch.nn.Linear) and type(child).__name__.startswith("FakeQuantized"):
+                lin = torch.nn.Linear(child.in_features, child.out_features, bias=child.bias is not None,
+                                      dtype=child.weight.dtype, device=child.weight.device)
+                with torch.no_grad():
+                    lin.weight.copy_(child.weight)
+                    if child.bias is not None:
+                        lin.bias.copy_(child.bias)
+                setattr(parent, name, lin)
+    return model
 
 
 def merge_adapters(model, cfg):

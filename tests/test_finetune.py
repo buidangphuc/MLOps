@@ -181,13 +181,13 @@ def test_full_finetune_trains_every_weight_and_pads_with_eos(tiny_dir, cm):
 
 def test_qat_scheme_the_serving_gpu_cannot_run_stops_before_any_step(tmp_artifacts, tiny_dir, cm, monkeypatch):
     def boom(*a, **k):
-        raise AssertionError("a training step ran")
+        raise AssertionError("a model was built")
 
-    monkeypatch.setattr(ModelTrainer, "build_trainer", boom)
+    monkeypatch.setattr("datascience.components.model_trainer.build_for_training", boom)
     cfg = _trainer_cfg(cm, tiny_dir, "qat")
     cfg = dataclasses.replace(cfg, finetune=dataclasses.replace(cfg.finetune, qat_scheme="int4-wo"))
     with pytest.raises(Unsupported, match=r"int4-wo.*T4.*7\.5"):
-        ModelTrainer(cfg).train()
+        ModelTrainer(cfg).build_trainer()
 
 
 def test_qat_scheme_must_be_qat_capable(tmp_artifacts, tiny_dir, cm, tmp_path):
@@ -202,6 +202,19 @@ def test_qat_scheme_must_be_qat_capable(tmp_artifacts, tiny_dir, cm, tmp_path):
     f.write_text(yaml.safe_dump(params))
     with pytest.raises(ValueError, match=r"int8-dyn.*int4-wo"):
         ConfigurationManager(params_filepath=f)
+
+
+def test_unwrap_fake_quant_leaves_plain_linears():
+    from datascience.model import unwrap_fake_quant
+
+    class FakeQuantizedLinear(torch.nn.Linear):
+        pass
+
+    net = torch.nn.Sequential(torch.nn.Linear(4, 3), torch.nn.Sequential(FakeQuantizedLinear(3, 2, bias=False)))
+    before = net[1][0].weight.detach().clone()
+    unwrap_fake_quant(net)
+    assert all(type(m) is torch.nn.Linear for m in net.modules() if isinstance(m, torch.nn.Linear))
+    assert torch.equal(net[1][0].weight, before) and net[1][0].bias is None
 
 
 def test_load_trained_reuses_the_recorded_scheme(tiny_dir, tmp_path, monkeypatch):

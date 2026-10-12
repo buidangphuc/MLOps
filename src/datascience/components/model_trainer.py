@@ -6,8 +6,8 @@ from datascience.constants import paths
 from datascience.entity.config_entity import ModelTrainerConfig
 from datascience.infer.scoring import encode_example, pad_batch
 from datascience.model import (
-    QUANT_SCHEME_FILE, bf16_ok, build_for_training, check_qat_scheme, load_label_map, merge_adapters, qat_step,
-    save_pretrained_atomic,
+    QUANT_SCHEME_FILE, bf16_ok, build_for_training, check_qat_scheme, load_label_map, merge_adapters, qat_prepare,
+    save_pretrained_atomic, unwrap_fake_quant,
 )
 from datascience.utils.io import atomic_write_json, read_jsonl
 from datascience.utils.runtime import is_oom_error, set_run_status, set_seed
@@ -148,9 +148,14 @@ class ModelTrainer:
         from datasets import Dataset
         from transformers import EarlyStoppingCallback, Trainer, TrainingArguments
 
+        if cfg.finetune.method == "qat":
+            check_qat_scheme(cfg.finetune.qat_scheme)   # before the model is built or any step runs
+
         label2id, _ = load_label_map(paths.LABEL_MAP)
         labels = list(label2id)   # candidate labels = TRAIN-only label map
         model, tokenizer = build_for_training(cfg)
+        if cfg.finetune.method == "qat":
+            qat_prepare(model, cfg.finetune.qat_scheme)
 
         def to_ds(path):
             rows = read_jsonl(path, required_fields=[cfg.text_field, cfg.label_field])
@@ -196,12 +201,8 @@ class ModelTrainer:
     def _run(self, batch_size: int):
         cfg = self.config
         qat = cfg.finetune.qat_scheme if cfg.finetune.method == "qat" else None
-        if cfg.finetune.method == "qat":
-            check_qat_scheme(qat)   # before any step
         trainer = self.build_trainer(batch_size)
         tokenizer = trainer.processing_class
-        if qat:
-            qat_step(trainer.model, qat, "prepare")
 
         last_ckpt = _last_checkpoint(paths.CKPT_DIR)
         if last_ckpt:
@@ -215,7 +216,7 @@ class ModelTrainer:
         # Trainer already restored the best model (load_best_model_at_end).
         model = merge_adapters(trainer.model, cfg)
         if qat:
-            model = qat_step(model, qat, "convert")
+            model = unwrap_fake_quant(model)
         save_pretrained_atomic(model, tokenizer, paths.MODEL_DIR)
         if qat:
             atomic_write_json(paths.MODEL_DIR / QUANT_SCHEME_FILE, {"scheme": qat})
