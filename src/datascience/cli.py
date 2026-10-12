@@ -58,8 +58,6 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("stage", choices=["staging", "production"])
     dp = sub.add_parser("deploy", help="deploy to a managed endpoint")
     dp.add_argument("--target", choices=["sagemaker-triton"], default="sagemaker-triton")
-    bn = sub.add_parser("bench", help="benchmark inference latency/throughput (one config)")
-    bn.add_argument("--target", choices=["local", "triton"], default="local")
     sub.add_parser("analyze", help="sweep Triton configs with Model Analyzer (prod-class GPU host)")
 
     from datascience.perf.cli import add_parser as add_perf_parser
@@ -138,10 +136,6 @@ def main(argv=None):
         from datascience.serve.deploy_sagemaker import deploy_sagemaker
 
         deploy_sagemaker()
-    elif cmd == "bench":
-        from datascience.bench import bench_local, bench_triton
-
-        (bench_triton if args.target == "triton" else bench_local)()
     elif cmd == "analyze":
         from datascience.serve_analyzer import analyze
 

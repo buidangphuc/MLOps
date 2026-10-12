@@ -12,6 +12,29 @@ def add_parser(sub) -> None:
     sh = ps.add_parser("show", help="list stored tuned results")
     sh.add_argument("--role", choices=ROLES)
     sh.add_argument("--hw", help="filter by hw_id")
+    tn = ps.add_parser("tune", help="sweep a workload on this box, store the best (hardware-bound)")
+    tn.add_argument("workload", choices=["infer"])
+    tn.add_argument("--entry", required=True, help="module:fn returning the model target")
+    tn.add_argument("--no-track", action="store_true", help="skip MLflow logging")
+
+
+def _cfg(workload: str) -> dict:
+    import yaml
+
+    from datascience.constants import paths
+
+    return yaml.safe_load(paths.PERF_FILE.read_text())[workload]
+
+
+def _build(workload: str, entry: str, cfg: dict):
+    from datascience.perf.runner import resolve_entry
+
+    target = resolve_entry(entry)
+    if workload == "infer":
+        from datascience.perf.workloads.infer import InferWorkload
+
+        return InferWorkload(target, iters=cfg["iters"], warmup=cfg["warmup"])
+    raise ValueError(workload)
 
 
 def dispatch(args) -> None:
@@ -29,3 +52,11 @@ def dispatch(args) -> None:
         for r in list_results(args.role, args.hw):
             print(f"{r['role']:>5}  {r['hw_id']}  {r['workload']:<12} trials={r['trials']:<3} "
                   f"chosen={json.dumps(r['chosen'])}")
+    elif args.perf_cmd == "tune":
+        from datascience.perf.hw import assert_role
+        from datascience.perf.runner import sweep
+
+        cfg = _cfg(args.workload)
+        fp = assert_role(args.workload)          # fail before loading any model on the wrong box
+        sweep(_build(args.workload, args.entry, cfg), cfg["grid"], cfg["objective"],
+              cfg.get("mode", "max"), cfg.get("constraints"), fp=fp, track=not args.no_track)

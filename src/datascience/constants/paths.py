@@ -14,6 +14,7 @@ PARAMS_FILE = CONFIG_DIR / "params.yaml"            # base experiment config (tr
 SERVING_FILE = CONFIG_DIR / "serving.yaml"          # serving lifecycle config (Phase 2)
 EXPERIMENTS_FILE = CONFIG_DIR / "experiments.yaml"  # the tuning loop: named variants
 HARDWARE_FILE = CONFIG_DIR / "hardware.yaml"        # train/infer GPU targets (perf binding)
+PERF_FILE = CONFIG_DIR / "perf.yaml"                # perf sweep grids / objectives / constraints
 
 ARTIFACTS = PROJECT_ROOT / "artifacts"
 DATA_DIR = ARTIFACTS / "data_ingestion"

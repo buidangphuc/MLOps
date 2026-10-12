@@ -93,3 +93,105 @@ def test_register_records_train_hw(tmp_artifacts, box):
 
     meta = json.loads((tmp_artifacts / "registry" / "M" / "v1" / "registry_meta.json").read_text())
     assert meta["metadata"]["train_hw"]["gpus"][0]["name"] == A100["name"]
+
+
+# --- runner -------------------------------------------------------------------------------
+
+class _FakeWorkload:
+    """Throughput grows with batch; batch 64 OOMs; batch 32 busts the latency budget."""
+
+    name, role = "fake", "infer"
+
+    def space(self, grid):
+        from datascience.perf.runner import grid_points
+
+        return grid_points(grid)
+
+    def trial(self, cfg):
+        bs = cfg["batch_size"]
+        if bs == 64:
+            raise RuntimeError("CUDA out of memory. Tried to allocate 2.00 GiB")
+        return {"throughput": bs * 100.0, "p99_ms": bs * 2.0}
+
+
+def test_sweep_picks_best_feasible_and_stores_it(tmp_artifacts, box):
+    from datascience.perf.runner import sweep
+
+    fp = box(T4)
+    res = sweep(_FakeWorkload(), {"batch_size": [1, 16, 32, 64]}, "throughput",
+                constraints={"p99_ms": {"max": 40}}, fp=fp, track=False)
+
+    assert res["chosen"] == {"batch_size": 16}
+    reasons = {t["config"]["batch_size"]: t["reason"] for t in res["trials"]}
+    assert reasons[64] == "oom" and "p99_ms" in reasons[32]
+    assert store.load_tuned("infer", "fake", fp) == {"batch_size": 16}
+
+
+def test_sweep_refuses_wrong_role_box(tmp_artifacts, box):
+    from datascience.perf.runner import sweep
+
+    with pytest.raises(hw.HardwareMismatch):
+        sweep(_FakeWorkload(), {"batch_size": [1]}, "throughput", fp=box(A100), track=False)
+
+
+def test_sweep_non_oom_errors_propagate(tmp_artifacts, box):
+    from datascience.perf.runner import sweep
+
+    class Broken(_FakeWorkload):
+        def trial(self, cfg):
+            raise KeyError("bug")
+
+    with pytest.raises(KeyError):
+        sweep(Broken(), {"batch_size": [1]}, "throughput", fp=box(T4), track=False)
+
+
+def test_resolve_entry(tmp_path, monkeypatch):
+    from datascience.perf.runner import resolve_entry
+
+    (tmp_path / "my_entry.py").write_text("def make():\n    return 'target'\n")
+    monkeypatch.syspath_prepend(str(tmp_path))
+    assert resolve_entry("my_entry:make") == "target"
+    with pytest.raises(ValueError):
+        resolve_entry("my_entry")
+
+
+# --- infer workload -----------------------------------------------------------------------
+
+class _FakeTarget:
+    """fp16 is slightly worse than fp32; int8 loses too much quality; onnx has no fp16."""
+
+    _quality = {"fp32": 0.90, "fp16": 0.895, "int8": 0.80}
+
+    def predictor(self, backend, precision):
+        from datascience.perf.runner import Unsupported
+
+        if backend == "onnx" and precision == "fp16":
+            raise Unsupported("onnx fp16")
+        fn = lambda batch: [0] * len(batch)  # noqa: E731
+        fn.quality = self._quality[precision]
+        return fn
+
+    def inputs(self, length, batch_size):
+        return ["x"] * batch_size
+
+    def score(self, predict):
+        return predict.quality
+
+
+def test_infer_drops_bf16_for_t4_and_guards_quality(tmp_artifacts, box):
+    from datascience.perf.runner import sweep
+    from datascience.perf.workloads.infer import InferWorkload
+
+    grid = {"backend": ["torch", "onnx"], "precision": ["fp32", "fp16", "bf16", "int8"],
+            "batch_size": [4], "length": ["short"]}
+    wl = InferWorkload(_FakeTarget(), iters=3, warmup=1, targets=TARGETS)
+    res = sweep(wl, grid, "throughput", constraints={"quality_drop": {"max": 0.01}},
+                fp=box(T4), track=False)
+
+    precisions = {t["config"]["precision"] for t in res["trials"]}
+    assert "bf16" not in precisions                                  # T4 target: never tried
+    by_cfg = {(t["config"]["backend"], t["config"]["precision"]): t for t in res["trials"]}
+    assert not by_cfg[("torch", "int8")]["feasible"]                 # quality guard
+    assert by_cfg[("onnx", "fp16")]["reason"].startswith("unsupported")
+    assert by_cfg[("torch", "fp16")]["feasible"]
+    assert res["chosen"]["precision"] in ("fp32", "fp16")
