@@ -1,2 +1,0 @@
-# Superseded by pyproject.toml — GPU serving runtime (mutually exclusive with cpu):
-.[gpu]

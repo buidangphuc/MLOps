@@ -6,7 +6,7 @@
 
 Start all services:
 ```bash
-docker compose -f infra/docker-compose.yml up -d --build
+docker compose -f ops/docker-compose.yml up -d --build
 ```
 
 MinIO buckets will be created automatically: `mlflow`, `dvc`.

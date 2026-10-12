@@ -1,11 +1,7 @@
----
-name: ml-pipeline-repo
-description: Rules and map for this MLOps repo (fine-tuning pipeline + serving/registry platform + GPU perf platform). Use before changing code, configs, serving, registry, or perf tuning, and for architecture questions.
----
 
 # MLOps repo
 
-This file is where the rules for this repo live. `CLAUDE.md` routes here; when a convention changes, edit this file.
+Rules, invariants and the code map for this repo. When a convention changes, edit this file.
 
 ## What this repo is
 

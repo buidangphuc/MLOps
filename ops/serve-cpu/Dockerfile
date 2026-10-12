@@ -7,7 +7,7 @@
 # serves any model version. Weights come in at RUNTIME one of two ways:
 #
 # Build from the REPO ROOT:
-#   docker build -f infra/serve-cpu/Dockerfile -t gliner-serve-cpu .
+#   docker build -f ops/serve-cpu/Dockerfile -t gliner-serve-cpu .
 #
 # (A) Pull from the S3 model registry — the "build serving anywhere" path. Set serving.yaml
 #     model_source: registry (+ registry.s3_bucket), then pick the version by env:
@@ -31,7 +31,7 @@ WORKDIR /app
 # CPU-only torch first, from the CPU wheel index (avoids the huge CUDA build).
 RUN pip install --no-cache-dir torch==2.2.2 --index-url https://download.pytorch.org/whl/cpu
 
-COPY infra/serve-cpu/requirements.txt .
+COPY ops/serve-cpu/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Code + config only. The model is mounted at runtime (keeps the image small + reusable).
