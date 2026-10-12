@@ -4,7 +4,8 @@ import os
 from datascience import log
 from datascience.constants import paths
 from datascience.entity.config_entity import ModelTrainerConfig
-from datascience.model import build_for_training, load_label_map, save_pretrained_atomic
+from datascience.infer.scoring import encode_example, pad_batch
+from datascience.model import bf16_ok, build_for_training, load_label_map, merge_adapters, save_pretrained_atomic
 from datascience.utils.io import read_jsonl
 from datascience.utils.runtime import is_oom_error, set_run_status, set_seed
 
@@ -71,63 +72,38 @@ def _histogram_callback(log_dir, every: int):
     return HistLogger()
 
 
-def _bf16_ok() -> bool:
-    # bf16 needs a CUDA GPU that supports it (Ampere sm_80+). Off on CPU/MPS.
-    import torch
-
-    return torch.cuda.is_available() and torch.cuda.is_bf16_supported()
-
-
-# --- Tuning rungs applied to the model before training (off by default) ------------
-
-def _apply_lora(model, t):
-    """R5: replace full-weight training with small LoRA adapters."""
-    from peft import LoraConfig, TaskType, get_peft_model
-
-    model = get_peft_model(
-        model,
-        LoraConfig(
-            task_type=TaskType.SEQ_CLS,
-            r=t.lora_r,
-            lora_alpha=t.lora_alpha,
-            lora_dropout=t.lora_dropout,
-            # None -> PEFT auto-maps the attention projections for backbones it knows
-            # (bert, roberta, gpt2, llama, ...). For ones it doesn't (e.g. distilbert),
-            # set tuning.lora_target_modules, e.g. [q_lin, v_lin].
-            target_modules=t.lora_target_modules,
-        ),
+def training_kwargs(cfg: ModelTrainerConfig, batch_size: int, report_to: list) -> dict:
+    """TrainingArguments kwargs. With `perf.apply_tuned` the throughput config tuned for this
+    box's train role is merged over them; a result tuned on another GPU raises HardwareMismatch."""
+    kwargs = dict(
+        output_dir=str(paths.CKPT_DIR),
+        learning_rate=cfg.lr,
+        per_device_train_batch_size=batch_size,
+        per_device_eval_batch_size=cfg.eval_batch_size,
+        weight_decay=cfg.weight_decay,
+        warmup_steps=cfg.warmup_ratio,   # a float in [0, 1) is a ratio of total steps
+        eval_strategy="epoch",
+        save_strategy="epoch",
+        save_total_limit=cfg.save_total_limit,
+        load_best_model_at_end=True,
+        metric_for_best_model="eval_loss",
+        greater_is_better=False,
+        logging_steps=20,
+        seed=cfg.seed,
+        report_to=report_to,
+        bf16=bf16_ok(),
+        remove_unused_columns=False,   # the collator takes our pre-encoded columns as they are
     )
-    model.print_trainable_parameters()
-    return model
+    if cfg.max_steps and cfg.max_steps > 0:
+        kwargs["max_steps"] = cfg.max_steps
+    else:
+        kwargs["num_train_epochs"] = cfg.epochs
+    if cfg.apply_tuned:
+        from datascience.perf.store import load_tuned
+        from datascience.perf.workloads.train import training_args
 
-
-def _freeze_bottom_layers(model, n: int):
-    """R3: freeze the embeddings + the bottom N transformer layers (HF naming: ...layer.<i>...)."""
-    import re
-
-    frozen = 0
-    for name, p in model.named_parameters():
-        m = re.search(r"\.layer\.(\d+)\.", name)
-        if "embeddings" in name or (m and int(m.group(1)) < n):
-            p.requires_grad = False
-            frozen += 1
-    log.info(f"R3 freeze: embeddings + bottom {n} layers ({frozen} tensors frozen)")
-
-
-def _differential_optimizer(model, head_lr, encoder_lr, weight_decay):
-    """R3: lower LR for the pretrained encoder, full LR for the freshly-init head."""
-    import torch
-
-    prefix = model.base_model_prefix  # e.g. "distilbert" / "bert" / "roberta"
-    enc, head = [], []
-    for name, p in model.named_parameters():
-        if p.requires_grad:
-            (enc if name.startswith(prefix) else head).append(p)
-    log.info(f"R3 differential LR: encoder={encoder_lr} (prefix '{prefix}'), head={head_lr}")
-    return torch.optim.AdamW(
-        [{"params": enc, "lr": encoder_lr}, {"params": head, "lr": head_lr}],
-        weight_decay=weight_decay,
-    )
+        kwargs.update(training_args(load_tuned("train", "train")))
+    return kwargs
 
 
 class ModelTrainer:
@@ -163,58 +139,28 @@ class ModelTrainer:
 
     def _run(self, batch_size: int):
         cfg = self.config
-
-        import numpy as np
+        if cfg.finetune.method == "qat":
+            raise NotImplementedError("group 3")
 
         from datasets import Dataset
-        from transformers import (
-            DataCollatorWithPadding,
-            EarlyStoppingCallback,
-            Trainer,
-            TrainingArguments,
-        )
+        from transformers import EarlyStoppingCallback, Trainer, TrainingArguments
 
-        label2id, id2label = load_label_map(paths.LABEL_MAP)
-        model, tokenizer = build_for_training(cfg.base_model, label2id, id2label)
-
-        # Tuning rungs (R5 LoRA wrap first, then R3 freeze; differential LR -> custom optimizer)
-        tun = cfg.tuning
-        if tun.lora:
-            model = _apply_lora(model, tun)
-        if tun.freeze_encoder_layers > 0:
-            _freeze_bottom_layers(model, tun.freeze_encoder_layers)
-        optimizers = (None, None)
-        if tun.differential_lr and not tun.lora:
-            optimizers = (_differential_optimizer(model, cfg.lr, tun.encoder_lr, cfg.weight_decay), None)
+        label2id, _ = load_label_map(paths.LABEL_MAP)
+        labels = list(label2id)   # candidate labels = TRAIN-only label map
+        model, tokenizer = build_for_training(cfg)
 
         def to_ds(path):
             rows = read_jsonl(path, required_fields=[cfg.text_field, cfg.label_field])
             kept = [r for r in rows if r[cfg.label_field] in label2id]
             if len(kept) < len(rows):
                 log.warning(f"{path.name}: dropped {len(rows) - len(kept)} rows with unseen label")
-            ds = Dataset.from_dict(
-                {
-                    "text": [r[cfg.text_field] for r in kept],
-                    "labels": [label2id[r[cfg.label_field]] for r in kept],
-                }
-            )
-            return ds.map(
-                lambda b: tokenizer(b["text"], truncation=True, max_length=cfg.max_length),
-                batched=True,
-                remove_columns=["text"],
-            )
+            return Dataset.from_list([
+                encode_example(tokenizer, cfg.task, r[cfg.text_field], r[cfg.label_field], labels, cfg.max_length)
+                for r in kept
+            ])
 
         train_ds, val_ds = to_ds(paths.TRAIN_FILE), to_ds(paths.VAL_FILE)
-        collator = DataCollatorWithPadding(tokenizer)
-
-        def compute_metrics(eval_pred):
-            from datascience import metrics as M
-
-            logits, labels = eval_pred
-            probs = M.softmax(np.asarray(logits))
-            preds = probs.argmax(axis=-1)
-            # the declared metrics (incl. objective) — not a hardcoded set
-            return M.compute_scalar_metrics(cfg.compute, labels, preds, probs)
+        pad_id = tokenizer.pad_token_id
 
         report_to = []
         if cfg.tracking_backend == "mlflow":
@@ -224,30 +170,7 @@ class ModelTrainer:
         # TB can be the primary backend OR run alongside mlflow (opt-in); histograms need it.
         if cfg.tracking_backend == "tensorboard" or cfg.tensorboard or cfg.log_histograms:
             report_to.append("tensorboard")
-
-        args_kwargs = dict(
-            output_dir=str(paths.CKPT_DIR),
-            learning_rate=cfg.lr,
-            per_device_train_batch_size=batch_size,
-            per_device_eval_batch_size=cfg.eval_batch_size,
-            weight_decay=cfg.weight_decay,
-            warmup_ratio=cfg.warmup_ratio,
-            eval_strategy="epoch",
-            save_strategy="epoch",
-            save_total_limit=cfg.save_total_limit,
-            load_best_model_at_end=True,
-            metric_for_best_model=cfg.objective,
-            greater_is_better=True,
-            logging_steps=20,
-            seed=cfg.seed,
-            report_to=report_to,
-            bf16=_bf16_ok(),
-            logging_dir=str(paths.LOG_DIR / "tensorboard"),
-        )
-        if cfg.max_steps and cfg.max_steps > 0:
-            args_kwargs["max_steps"] = cfg.max_steps
-        else:
-            args_kwargs["num_train_epochs"] = cfg.epochs
+            os.environ["TENSORBOARD_LOGGING_DIR"] = str(paths.LOG_DIR / "tensorboard")
 
         callbacks = [
             EarlyStoppingCallback(early_stopping_patience=cfg.patience),
@@ -256,15 +179,12 @@ class ModelTrainer:
         if cfg.log_histograms:
             callbacks.append(_histogram_callback(paths.LOG_DIR / "tensorboard", every=20))
 
-        args = TrainingArguments(**args_kwargs)
         trainer = Trainer(
             model=model,
-            args=args,
+            args=TrainingArguments(**training_kwargs(cfg, batch_size, report_to)),
             train_dataset=train_ds,
             eval_dataset=val_ds,
-            data_collator=collator,
-            compute_metrics=compute_metrics,
-            optimizers=optimizers,
+            data_collator=lambda features: pad_batch(features, pad_id),
             callbacks=callbacks,
         )
 
@@ -278,5 +198,5 @@ class ModelTrainer:
             raise
 
         # Trainer already restored the best model (load_best_model_at_end).
-        save_pretrained_atomic(trainer.model, tokenizer, paths.MODEL_DIR)
-        log.info(f"best model saved -> {paths.MODEL_DIR} (objective={cfg.objective})")
+        save_pretrained_atomic(merge_adapters(trainer.model, cfg), tokenizer, paths.MODEL_DIR)
+        log.info(f"best model saved -> {paths.MODEL_DIR} (method={cfg.finetune.method})")

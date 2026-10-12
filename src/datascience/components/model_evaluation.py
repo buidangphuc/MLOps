@@ -4,6 +4,7 @@ from datascience import metrics as M
 from datascience import log
 from datascience.constants import paths
 from datascience.entity.config_entity import ModelEvaluationConfig
+from datascience.infer.scoring import score_labels
 from datascience.model import load_label_map, load_trained
 from datascience.utils.io import atomic_write_json, read_jsonl, write_jsonl
 from datascience.utils.runtime import pick_device, set_run_status
@@ -11,26 +12,17 @@ from datascience.utils.runtime import pick_device, set_run_status
 
 class ModelEvaluation:
 
-    def __init__(self, config: ModelEvaluationConfig):
+    def __init__(self, config: ModelEvaluationConfig, scheme=None):
         self.config = config
+        self.scheme = scheme   # quantization scheme to evaluate under (None = as saved)
 
-    def _predict_logits(self, model, tokenizer, rows, device):
-        import torch
-
-        chunks = []
-        bs = self.config.eval_batch_size
-        for i in range(0, len(rows), bs):
-            texts = [r[self.config.text_field] for r in rows[i : i + bs]]
-            enc = tokenizer(
-                texts,
-                truncation=True,
-                max_length=self.config.max_length,
-                padding=True,
-                return_tensors="pt",
-            ).to(device)
-            with torch.no_grad():
-                chunks.append(model(**enc).logits.cpu().numpy())
-        return np.concatenate(chunks, axis=0)
+    def _predict_logits(self, model, tokenizer, rows, labels):
+        """[n, n_labels] length-normalised label log-likelihoods, used as logits downstream."""
+        cfg = self.config
+        return score_labels(
+            model, tokenizer, cfg.task, [r[cfg.text_field] for r in rows], labels,
+            max_length=cfg.max_length, batch_size=cfg.eval_batch_size,
+        )
 
     def evaluate(self):
         set_run_status("evaluate", "running")
@@ -55,10 +47,11 @@ class ModelEvaluation:
         cfg = self.config
         device = pick_device()
         label2id, id2label = load_label_map(paths.LABEL_MAP)
-        model, tokenizer = load_trained(paths.MODEL_DIR, device)
+        model, tokenizer = load_trained(paths.MODEL_DIR, device, scheme=self.scheme)
+        labels = [id2label[i] for i in sorted(id2label)]
 
         test_rows, y_true = self._load_rows(paths.TEST_FILE, label2id)
-        test_logits = self._predict_logits(model, tokenizer, test_rows, device)
+        test_logits = self._predict_logits(model, tokenizer, test_rows, labels)
         probs = M.softmax(test_logits)
         y_pred = probs.argmax(axis=1)
 
@@ -88,7 +81,7 @@ class ModelEvaluation:
         if cfg.calibration:
             ece = M.expected_calibration_error(probs, y_true)
             val_rows, val_labels = self._load_rows(paths.VAL_FILE, label2id)
-            val_logits = self._predict_logits(model, tokenizer, val_rows, device)
+            val_logits = self._predict_logits(model, tokenizer, val_rows, labels)
             temperature = M.fit_temperature(val_logits, val_labels)
             ece_after = M.expected_calibration_error(M.softmax(test_logits / temperature), y_true)
             result["calibration"] = {"ece": ece, "ece_after_temp": ece_after, "temperature": temperature}

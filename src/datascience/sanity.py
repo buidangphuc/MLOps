@@ -1,27 +1,25 @@
-"""Sanity pre-flight checks (opt-in debugging).
+"""Sanity pre-flight check (opt-in debugging).
 
-Two classic checks that catch model/data/loss bugs BEFORE a long run:
-  1. loss@init should be ~ ln(num_classes) for balanced cross-entropy.
-  2. the model must be able to overfit a single tiny batch (loss drops sharply);
-     if it can't, something is wrong (bad labels, frozen weights, wrong loss).
+The model must be able to overfit a single tiny batch (completion loss drops sharply); if it
+can't, something is wrong (bad labels, frozen weights, a prompt that masks the whole example).
 """
-
-import math
 
 from datascience import log
 from datascience.constants import paths
 from datascience.entity.config_entity import ModelTrainerConfig
+from datascience.infer.scoring import encode_example, pad_batch
 from datascience.model import build_for_training, load_label_map
 from datascience.utils.io import read_jsonl
 from datascience.utils.runtime import pick_device, set_seed
 
 
-def run_sanity(cfg: ModelTrainerConfig, n: int = 16, steps: int = 80, lr: float = 1e-4) -> bool:
+def run_sanity(cfg: ModelTrainerConfig, n: int = 16, steps: int = 40, lr: float = 1e-4) -> bool:
     import torch
 
     set_seed(cfg.seed)
     device = pick_device()
     label2id, _ = load_label_map(paths.LABEL_MAP)
+    labels = list(label2id)
 
     rows = [
         r
@@ -29,42 +27,27 @@ def run_sanity(cfg: ModelTrainerConfig, n: int = 16, steps: int = 80, lr: float 
         if r[cfg.label_field] in label2id
     ][:n]
 
-    model, tokenizer = build_for_training(cfg.base_model, label2id, {v: k for k, v in label2id.items()})
+    model, tokenizer = build_for_training(cfg)
     model.to(device).train()
-    enc = tokenizer(
-        [r[cfg.text_field] for r in rows],
-        truncation=True,
-        max_length=cfg.max_length,
-        padding=True,
-        return_tensors="pt",
-    ).to(device)
-    labels = torch.tensor([label2id[r[cfg.label_field]] for r in rows]).to(device)
+    batch = pad_batch(
+        [encode_example(tokenizer, cfg.task, r[cfg.text_field], r[cfg.label_field], labels, cfg.max_length) for r in rows],
+        tokenizer.pad_token_id,
+    )
+    batch = {k: v.to(device) for k, v in batch.items()}
 
-    # 1) loss @ init ~ ln(C)
-    with torch.no_grad():
-        loss0 = model(**enc, labels=labels).loss.item()
-    expected = math.log(len(label2id))
-    init_ok = abs(loss0 - expected) < 0.7
-    log.info(f"sanity loss@init = {loss0:.3f} (expected ~ ln(C) = {expected:.3f}) -> {'OK' if init_ok else 'SUSPECT'}")
-
-    # 2) overfit one batch
-    optimizer = torch.optim.AdamW(model.parameters(), lr=lr)
-    final = loss0
+    optimizer = torch.optim.AdamW([p for p in model.parameters() if p.requires_grad], lr=lr)
+    first = final = None
     for _ in range(steps):
         optimizer.zero_grad()
-        out = model(**enc, labels=labels)
+        out = model(**batch)
         out.loss.backward()
         optimizer.step()
+        first = out.loss.item() if first is None else first
         final = out.loss.item()
-    overfit_ok = final < loss0 * 0.5
-    log.info(
-        f"sanity overfit-one-batch: loss {loss0:.3f} -> {final:.3f} after {steps} steps "
-        f"-> {'OK' if overfit_ok else 'SUSPECT'}"
-    )
-
-    ok = init_ok and overfit_ok
+    ok = final < first * 0.5
+    log.info(f"sanity overfit-one-batch: loss {first:.3f} -> {final:.3f} after {steps} steps -> {'OK' if ok else 'SUSPECT'}")
     if ok:
-        log.info("SANITY PASSED — model learns and init loss is sane")
+        log.info("SANITY PASSED — model learns")
     else:
-        log.warning("SANITY SUSPECT — check data labels / model / loss before a full run")
+        log.warning("SANITY SUSPECT — check data labels / model / prompt before a full run")
     return ok

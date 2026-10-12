@@ -20,8 +20,17 @@ def tmp_artifacts(tmp_path, monkeypatch):
         "EVAL_DIR": tmp_path / "model_evaluation",
         "METRICS_FILE": tmp_path / "model_evaluation" / "metrics.json",
         "PERF_DIR": tmp_path / "perf",
+        "SPLIT_DIR": tmp_path / "data_transformation",
+        "TRAIN_FILE": tmp_path / "data_transformation" / "train.jsonl",
+        "VAL_FILE": tmp_path / "data_transformation" / "val.jsonl",
+        "TEST_FILE": tmp_path / "data_transformation" / "test.jsonl",
+        "LABEL_MAP": tmp_path / "data_transformation" / "label_map.json",
+        "MODEL_DIR": tmp_path / "model_trainer" / "model",
+        "CKPT_DIR": tmp_path / "model_trainer" / "checkpoints",
+        "RUN_STATUS": tmp_path / "run_status.json",
     }
     for name, value in mapping.items():
         monkeypatch.setattr(paths, name, value, raising=False)
-    mapping["EVAL_DIR"].mkdir(parents=True, exist_ok=True)
+    for d in ("EVAL_DIR", "SPLIT_DIR", "MODEL_DIR"):
+        mapping[d].mkdir(parents=True, exist_ok=True)
     return tmp_path
