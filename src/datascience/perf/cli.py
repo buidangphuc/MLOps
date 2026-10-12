@@ -16,6 +16,26 @@ def add_parser(sub) -> None:
     tn.add_argument("workload", choices=["infer", "train"])
     tn.add_argument("--entry", required=True, help="module:fn returning the model/trainer target")
     tn.add_argument("--no-track", action="store_true", help="skip MLflow logging")
+    pr = ps.add_parser("profile", help="torch.profiler + NVML over N steady-state steps")
+    pr.add_argument("workload", choices=["infer", "train"])
+    pr.add_argument("--entry", required=True, help="module:fn returning the model/trainer target")
+    pr.add_argument("--steps", type=int, default=10)
+    pr.add_argument("--top-k", type=int, default=25)
+    pr.add_argument("--no-track", action="store_true", help="skip MLflow logging")
+
+
+def _profile_cfg(workload: str, cfg: dict) -> dict:
+    """This box's tuned config if there is one, else the grid's first values."""
+    from datascience.perf.hw import HardwareMismatch
+    from datascience.perf.store import load_tuned
+
+    try:
+        chosen = load_tuned(workload, workload)
+    except (FileNotFoundError, HardwareMismatch):
+        chosen = {k: v[0] for k, v in cfg["grid"].items()}
+    if workload == "infer":
+        chosen = {**chosen, "length": cfg["lengths"][-1]}   # profile the heaviest bucket
+    return chosen
 
 
 def _cfg(workload: str) -> dict:
@@ -64,3 +84,13 @@ def dispatch(args) -> None:
         fp = assert_role(args.workload)          # fail before loading any model on the wrong box
         sweep(_build(args.workload, args.entry, cfg), cfg["grid"], cfg["objective"],
               cfg.get("mode", "max"), cfg.get("constraints"), fp=fp, track=not args.no_track)
+    elif args.perf_cmd == "profile":
+        from datascience.perf.profile import profile_workload
+        from datascience.perf.runner import resolve_entry
+
+        cfg = _cfg(args.workload)
+        out, summary = profile_workload(args.workload, resolve_entry(args.entry),
+                                        _profile_cfg(args.workload, cfg), args.steps, args.top_k,
+                                        track=not args.no_track)
+        print(json.dumps(summary, indent=2))
+        print((out / "top_kernels.txt").read_text())

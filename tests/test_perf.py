@@ -242,3 +242,18 @@ def test_training_args_mapping():
     args = training_args({"precision": "bf16", "tf32": True, "per_device_batch": 8, "grad_accum": 4})
     assert args["bf16"] and not args["fp16"] and args["tf32"]
     assert args["per_device_train_batch_size"] == 8 and args["gradient_accumulation_steps"] == 4
+
+
+# --- profile ------------------------------------------------------------------------------
+
+def test_busy_split_separates_memcpy_and_idle():
+    from types import SimpleNamespace
+
+    from datascience.perf.profile import busy_split
+
+    ev = [SimpleNamespace(key="ampere_sgemm_128x64", self_device_time_total=6000),
+          SimpleNamespace(key="Memcpy HtoD (Pageable -> Device)", self_device_time_total=2000),
+          SimpleNamespace(key="aten::linear", self_device_time_total=0)]
+    s = busy_split(ev, wall_ms=10.0)
+    assert (s["compute_ms"], s["memcpy_ms"], s["idle_ms"]) == (6.0, 2.0, 2.0)
+    assert s["gpu_busy_frac"] == 0.8
