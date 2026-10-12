@@ -8,12 +8,12 @@ Two classic checks that catch model/data/loss bugs BEFORE a long run:
 
 import math
 
-from src.datascience import log
-from src.datascience.constants import paths
-from src.datascience.entity.config_entity import ModelTrainerConfig
-from src.datascience.model import build_for_training, load_label_map
-from src.datascience.utils.io import read_jsonl
-from src.datascience.utils.runtime import pick_device, set_seed
+from datascience import log
+from datascience.constants import paths
+from datascience.entity.config_entity import ModelTrainerConfig
+from datascience.model import build_for_training, load_label_map
+from datascience.utils.io import read_jsonl
+from datascience.utils.runtime import pick_device, set_seed
 
 
 def run_sanity(cfg: ModelTrainerConfig, n: int = 16, steps: int = 80, lr: float = 1e-4) -> bool:

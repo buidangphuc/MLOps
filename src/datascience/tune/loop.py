@@ -13,11 +13,11 @@ import shutil
 
 import yaml
 
-from src.datascience import log
-from src.datascience.components.model_evaluation import ModelEvaluation
-from src.datascience.components.model_trainer import ModelTrainer
-from src.datascience.config.configuration import ConfigurationManager
-from src.datascience.constants import paths
+from datascience import log
+from datascience.components.model_evaluation import ModelEvaluation
+from datascience.components.model_trainer import ModelTrainer
+from datascience.config.configuration import ConfigurationManager
+from datascience.constants import paths
 
 
 def _deep_merge(base: dict, override: dict) -> dict:
@@ -121,7 +121,7 @@ def _train_eval_one(cm, variant):
 
 def _gate_passed(cm, metrics) -> bool:
     # In the loop a failing gate must NOT abort the other variants, so swallow GateFailed.
-    from src.datascience.gate import GateFailed, QualityGate
+    from datascience.gate import GateFailed, QualityGate
 
     try:
         return QualityGate(cm.gate()).check(metrics)

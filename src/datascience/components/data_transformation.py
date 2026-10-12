@@ -2,10 +2,10 @@ from collections import Counter
 
 from sklearn.model_selection import GroupShuffleSplit, train_test_split
 
-from src.datascience import log
-from src.datascience.constants import paths
-from src.datascience.entity.config_entity import DataTransformationConfig
-from src.datascience.utils.io import atomic_write_json, data_fingerprint, read_jsonl, write_jsonl
+from datascience import log
+from datascience.constants import paths
+from datascience.entity.config_entity import DataTransformationConfig
+from datascience.utils.io import atomic_write_json, data_fingerprint, read_jsonl, write_jsonl
 
 
 def _can_stratify(labels) -> bool:

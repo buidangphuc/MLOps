@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 from typing import Optional
 import uvicorn
-from src.datascience.pipeline.prediction_pipeline import PredictionPipeline
+from datascience.pipeline.prediction_pipeline import PredictionPipeline
 
 app = FastAPI()  # initializing a FastAPI app
 

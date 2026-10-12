@@ -10,10 +10,10 @@ and register it in `_REMOTE_BACKENDS` below. Everything else stays the same.
 
 from typing import Protocol
 
-from src.datascience import log
-from src.datascience.constants import paths
-from src.datascience.entity.config_entity import RegistryConfig
-from src.datascience.registry.local import LocalRegistry
+from datascience import log
+from datascience.constants import paths
+from datascience.entity.config_entity import RegistryConfig
+from datascience.registry.local import LocalRegistry
 
 
 class RemoteRegistry(Protocol):
@@ -21,13 +21,17 @@ class RemoteRegistry(Protocol):
 
 
 # Seam: backend name -> factory(cfg) -> RemoteRegistry.
-from src.datascience.registry.s3 import from_config as _s3_from_config
+from datascience.registry.s3 import from_config as _s3_from_config
 
 _REMOTE_BACKENDS = {"s3": _s3_from_config}  # e.g. add {"mlflow": ..., "sagemaker": ...}
 
 
 def register(model_dir, metrics: dict, metadata: dict, cfg: RegistryConfig) -> dict:
     result = {}
+    # lineage: which box produced this model (perf binding — see perf/hw.py)
+    from datascience.perf.hw import fingerprint
+
+    metadata = {**metadata, "train_hw": fingerprint()}
 
     local = LocalRegistry(root=str(paths.REGISTRY_DIR), name=cfg.name)
     result["local_version"] = local.register(str(model_dir), metrics, metadata)

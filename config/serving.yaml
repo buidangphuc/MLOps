@@ -1,4 +1,4 @@
-# Serving / inference config — read by optimize / package / serve / deploy / bench.
+# Serving / inference config — read by optimize / package / serve / deploy / analyze.
 # Separate from params.yaml: it's versioned with the DEPLOYED endpoint, not a training run.
 #
 # `device` picks the whole serving PATH (both expose the SAME request/response contract —
@@ -47,8 +47,7 @@ sagemaker:
   s3_prefix: bds-genai-deploy/models/v-REPLACE
   role_arn: null               # SageMaker execution role ARN
   triton_image: null           # region-specific SageMaker Triton DLC URI (see AWS docs)
-  instance_type_gpu: ml.g4dn.xlarge
-  instance_type_cpu: ml.c5.xlarge   # used when device=cpu (~2-3x cheaper than GPU)
+  # instance types live in hardware.yaml targets.infer (one place for "what GPU serves")
   # The REAL models to host — one tar each. NO _1/_2 duplicates (that doubles GPU memory
   # on one instance without load-balancing — the deleted bug). Add suggestion/embedder here.
   models:

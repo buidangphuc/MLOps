@@ -2,7 +2,7 @@ import json
 import os
 import shutil
 
-from src.datascience import log
+from datascience import log
 
 
 class LocalRegistry:

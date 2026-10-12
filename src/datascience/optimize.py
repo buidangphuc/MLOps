@@ -15,9 +15,9 @@ gate fails, so a bad ONNX never reaches serving.
 import json
 import time
 
-from src.datascience import log
-from src.datascience.config.configuration import ConfigurationManager
-from src.datascience.constants import paths
+from datascience import log
+from datascience.config.configuration import ConfigurationManager
+from datascience.constants import paths
 
 
 def optimize():
@@ -40,7 +40,7 @@ def _export_onnx(quantize: str):
     """
     paths.OPTIMIZED_DIR.mkdir(parents=True, exist_ok=True)
     try:
-        from src.datascience.model import export_gliner_onnx  # thin wrapper, see model.py
+        from datascience.model import export_gliner_onnx  # thin wrapper, see model.py
 
         export_gliner_onnx(paths.MODEL_DIR, paths.OPTIMIZED_DIR, quantize=quantize)
         log.info(f"exported ONNX ({quantize}) -> {paths.OPTIMIZED_DIR}")
@@ -60,10 +60,10 @@ def parity_gate(cm=None, max_f1_drop=0.01, sample=2000):
     reports. Writes artifacts/optimize/parity.json.
     """
     cm = cm or ConfigurationManager()
-    from src.datascience.components.model_evaluation import ModelEvaluation
-    from src.datascience.infer.predict import Predictor
-    from src.datascience.model import load_labels
-    from src.datascience.utils.io import read_jsonl
+    from datascience.components.model_evaluation import ModelEvaluation
+    from datascience.infer.predict import Predictor
+    from datascience.model import load_labels
+    from datascience.utils.io import read_jsonl
 
     ev = cm.evaluation()
     labels = load_labels(paths.LABEL_MAP)
@@ -95,7 +95,7 @@ def parity_gate(cm=None, max_f1_drop=0.01, sample=2000):
 
 def _score_predictor(predictor, rows, labels, ev, ModelEvaluation):
     """(per-entity F1 on `rows`, mean latency ms) for a Predictor, via eval's set-based scorer."""
-    from src.datascience.components.model_evaluation import _score
+    from datascience.components.model_evaluation import _score
 
     me = ModelEvaluation(ev)
     gold = me._gold_pairs(rows, labels)

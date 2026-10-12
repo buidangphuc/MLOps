@@ -23,10 +23,10 @@ import tarfile
 
 from pathlib import Path
 
-from src.datascience import log
-from src.datascience.config.configuration import ConfigurationManager
-from src.datascience.constants import paths
-from src.datascience.utils.io import read_data_version
+from datascience import log
+from datascience.config.configuration import ConfigurationManager
+from datascience.constants import paths
+from datascience.utils.io import read_data_version
 
 # The Triton SageMaker DLC 23.07 ships CPython 3.10. Bundled compiled deps (.so) must match.
 _TRITON_ABI = "cpython-310"
@@ -221,7 +221,7 @@ def package_triton():
 
 
 def _labels() -> list:
-    from src.datascience.model import load_labels
+    from datascience.model import load_labels
 
     return load_labels(paths.LABEL_MAP)
 

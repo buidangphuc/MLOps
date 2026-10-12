@@ -6,8 +6,8 @@ the CPU profile (slower, functional). Same repo deploys to SageMaker.
 
 import subprocess
 
-from src.datascience import log
-from src.datascience.constants import paths
+from datascience import log
+from datascience.constants import paths
 
 
 def serve_triton():

@@ -3,8 +3,9 @@
 This tunes serving PARAMS (instance_group, dynamic_batching, ...) against REAL traffic, so
 it runs AFTER the first deploy: capture real requests from the live endpoint, then replay
 them here so the optimal config reflects the real input + load — not synthetic inputs.
-`bench` measures one config; this sweeps and picks (NVIDIA Model Analyzer). Run on a
-prod-class GPU host (matches serving.sagemaker.instance_type).
+`perf tune infer` sweeps model-side configs (backend/precision/batch); this sweeps Triton
+serving configs and picks (NVIDIA Model Analyzer). Run on a prod-class GPU host (matches
+hardware.yaml targets.infer).
 """
 
 import json
@@ -14,10 +15,10 @@ from pathlib import Path
 
 import yaml
 
-from src.datascience import log
-from src.datascience.config.configuration import ConfigurationManager
-from src.datascience.constants import paths
-from src.datascience.utils.io import read_jsonl
+from datascience import log
+from datascience.config.configuration import ConfigurationManager
+from datascience.constants import paths
+from datascience.utils.io import read_jsonl
 
 
 def _ma_config(a, repo, perf_input) -> dict:

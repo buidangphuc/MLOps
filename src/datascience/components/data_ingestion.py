@@ -1,8 +1,8 @@
-from src.datascience import log
-from src.datascience.constants import paths
-from src.datascience.entity.config_entity import DataIngestionConfig
-from src.datascience.utils.io import write_jsonl
-from src.datascience.utils.runtime import retry
+from datascience import log
+from datascience.constants import paths
+from datascience.entity.config_entity import DataIngestionConfig
+from datascience.utils.io import write_jsonl
+from datascience.utils.runtime import retry
 
 
 class DataIngestion:

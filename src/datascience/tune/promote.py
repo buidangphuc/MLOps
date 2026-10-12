@@ -10,11 +10,11 @@ import json
 
 import yaml
 
-from src.datascience import log, registry
-from src.datascience.config.configuration import ConfigurationManager
-from src.datascience.constants import paths
-from src.datascience.gate import QualityGate
-from src.datascience.utils.io import read_data_version
+from datascience import log, registry
+from datascience.config.configuration import ConfigurationManager
+from datascience.constants import paths
+from datascience.gate import QualityGate
+from datascience.utils.io import read_data_version
 
 
 def promote(variant: str):

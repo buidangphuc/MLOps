@@ -4,8 +4,8 @@ Task-agnostic — it only reads metrics by NAME from metrics.json and compares t
 thresholds. `on_fail=error` makes a failing gate exit non-zero (CI can block on it).
 """
 
-from src.datascience import log
-from src.datascience.entity.config_entity import GateConfig
+from datascience import log
+from datascience.entity.config_entity import GateConfig
 
 
 class GateFailed(Exception):

@@ -1,9 +1,9 @@
 from collections import Counter
 
-from src.datascience import log
-from src.datascience.constants import paths
-from src.datascience.entity.config_entity import DataValidationConfig
-from src.datascience.utils.io import atomic_write_text, read_jsonl
+from datascience import log
+from datascience.constants import paths
+from datascience.entity.config_entity import DataValidationConfig
+from datascience.utils.io import atomic_write_text, read_jsonl
 
 
 class DataValidation:
