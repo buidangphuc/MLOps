@@ -178,11 +178,17 @@ def test_full_finetune_trains_every_weight_and_pads_with_eos(tiny_dir, cm):
     assert tok.pad_token_id is not None
 
 
-def test_qat_is_not_built_yet_and_schemes_are_a_later_group(tiny_dir, cm):
+def test_qat_is_not_built_yet(tiny_dir, cm):
     with pytest.raises(NotImplementedError, match="group 3"):
         ModelTrainer(_trainer_cfg(cm, tiny_dir, "qat")).train()
-    with pytest.raises(NotImplementedError):
-        load_trained(tiny_dir, "cpu", scheme="int8-dyn")
+
+
+def test_load_trained_applies_a_scheme(tiny_dir):
+    from datascience.perf.runner import Unsupported
+
+    assert next(load_trained(tiny_dir, "cpu", scheme="bf16")[0].parameters()).dtype == torch.bfloat16
+    with pytest.raises(Unsupported, match="unknown scheme"):
+        load_trained(tiny_dir, "cpu", scheme="int3")
 
 
 def test_trainer_runs_and_saves_a_plain_model(tmp_artifacts, tiny_dir, cm):

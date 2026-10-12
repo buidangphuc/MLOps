@@ -305,3 +305,190 @@ def test_kernel_sweep_rejects_fast_but_wrong_config(tmp_artifacts, box, monkeypa
     wrong = next(t for t in res["trials"] if t["config"]["cfg"] == "fast")
     assert not wrong["feasible"] and "max_abs_err" in wrong["reason"]
     assert store.load_tuned("infer", "kernel-fake-8x16-fp16", box(T4)) == {"cfg": "ok"}
+
+
+# --- PTQ schemes --------------------------------------------------------------------------
+
+T4_ONLY = {"fp32", "fp16", "int8-wo", "int8-dyn", "nf4", "bnb-int8"}   # cc 7.5
+
+
+def _targets(cc):
+    return {**TARGETS, "infer": {**TARGETS["infer"], "compute_capability": cc}}
+
+
+def test_schemes_on_t4_infer_target():
+    from datascience.perf import quant
+
+    assert set(quant.supported("infer", TARGETS)) == T4_ONLY           # no bf16 / int4-wo / fp8
+
+
+def test_schemes_on_h100_infer_target():
+    from datascience.perf import quant
+
+    assert set(quant.supported("infer", _targets("9.0"))) == set(quant.SCHEMES)
+
+
+def test_unsupported_scheme_is_never_measured(tmp_artifacts, box):
+    from datascience.perf.runner import sweep
+    from datascience.perf.workloads.infer import InferWorkload
+
+    class Target(_FakeTarget):
+        _quality = {"fp32": 0.9, "fp16": 0.9, "fp8": 0.9}
+
+    wl = InferWorkload(Target(), ["short"], iters=2, warmup=1, targets=TARGETS)
+    res = sweep(wl, {"backend": ["torch"], "precision": ["fp32", "fp8", "fp16"], "batch_size": [2]},
+                "throughput", fp=box(T4), track=False)
+    assert {t["config"]["precision"] for t in res["trials"]} == {"fp32", "fp16"}
+
+
+def test_ort_int8_is_not_a_scheme_so_it_survives_filtering(tmp_artifacts, box):
+    from datascience.perf.workloads.infer import InferWorkload
+
+    wl = InferWorkload(_FakeTarget(), ["short"], targets=TARGETS)
+    pts = wl.space({"backend": ["onnx"], "precision": ["fp32", "int8", "bf16"], "batch_size": [1]})
+    assert [p["precision"] for p in pts] == ["fp32", "int8"]
+
+
+def test_backend_that_cannot_build_a_scheme_is_infeasible_and_sweep_continues(tmp_artifacts, box):
+    from datascience.perf.runner import Unsupported, sweep
+    from datascience.perf.workloads.infer import InferWorkload
+
+    class Target(_FakeTarget):
+        _quality = {"fp32": 0.9, "int8-wo": 0.9}
+
+        def predictor(self, backend, precision):
+            if precision == "int8-wo":
+                raise Unsupported("torchao is not installed")
+            return super().predictor(backend, precision)
+
+    wl = InferWorkload(Target(), ["short"], iters=2, warmup=1, targets=TARGETS)
+    res = sweep(wl, {"backend": ["torch"], "precision": ["fp32", "int8-wo"], "batch_size": [2]},
+                "throughput", fp=box(T4), track=False)
+    by = {t["config"]["precision"]: t for t in res["trials"]}
+    assert not by["int8-wo"]["feasible"] and by["int8-wo"]["reason"].startswith("unsupported")
+    assert res["chosen"]["precision"] == "fp32"
+
+
+def test_fastest_scheme_over_the_quality_drop_is_not_chosen(tmp_artifacts, box, monkeypatch):
+    from datascience.perf.runner import sweep
+    from datascience.perf.workloads import infer
+    from datascience.perf.workloads.infer import InferWorkload
+
+    class Target(_FakeTarget):
+        _quality = {"fp32": 0.90, "fp16": 0.895, "int8-dyn": 0.70}
+
+    speed = {"fp32": 3.0, "fp16": 2.0, "int8-dyn": 0.5}   # int8-dyn: fastest, but loses 0.2
+
+    def fake_time(fn, iters, warmup):
+        return [speed[Target.current]] * iters
+
+    class Probe(Target):
+        def predictor(self, backend, precision):
+            Target.current = precision
+            return super().predictor(backend, precision)
+
+    monkeypatch.setattr(infer, "time_ms", fake_time)
+    wl = InferWorkload(Probe(), ["short"], iters=3, warmup=1, targets=TARGETS)
+    res = sweep(wl, {"backend": ["torch"], "precision": ["fp32", "fp16", "int8-dyn"], "batch_size": [4]},
+                "throughput", constraints={"quality_drop": {"max": 0.01}}, fp=box(T4), track=False)
+    by = {t["config"]["precision"]: t for t in res["trials"]}
+    assert not by["int8-dyn"]["feasible"] and "quality_drop" in by["int8-dyn"]["reason"]
+    assert by["int8-dyn"]["metrics"]["throughput"] > by["fp16"]["metrics"]["throughput"]
+    assert res["chosen"]["precision"] == "fp16"
+
+
+def test_tokens_per_s_reported_when_target_generates(monkeypatch):
+    from datascience.perf.workloads import infer
+    from datascience.perf.workloads.infer import InferWorkload
+
+    monkeypatch.setattr(infer, "time_ms", lambda fn, iters, warmup: [100.0] * iters)
+    target = _FakeTarget()
+    target.new_tokens = 8
+    wl = InferWorkload(target, ["short"], iters=2, warmup=1, targets=TARGETS)
+    wl.space({"backend": ["torch"], "precision": ["fp32"], "batch_size": [4]})
+    m = wl.trial({"backend": "torch", "precision": "fp32", "batch_size": 4})
+    assert m["throughput"] == 40.0 and m["tokens_per_s"] == 320.0   # 4 items x 8 tokens / 0.1 s
+
+
+@pytest.mark.parametrize("scheme,lib", [("int8-wo", "torchao"), ("int8-dyn", "torchao"),
+                                        ("nf4", "bitsandbytes"), ("bnb-int8", "bitsandbytes")])
+def test_apply_without_the_library_is_unsupported(scheme, lib, monkeypatch):
+    import sys
+
+    from datascience.perf import quant
+    from datascience.perf.runner import Unsupported
+
+    monkeypatch.setitem(sys.modules, lib, None)                 # import raises ImportError
+    monkeypatch.setitem(sys.modules, f"{lib}.quantization", None)
+    monkeypatch.setattr("torch.cuda.is_available", lambda: True)   # past the GPU check, down to the import
+    with pytest.raises(Unsupported, match=lib):
+        quant.apply(object() if scheme.startswith("int8-") else "model_dir", scheme)
+
+
+def test_apply_unknown_scheme_and_missing_gpu_are_unsupported(monkeypatch):
+    from datascience.perf import quant
+    from datascience.perf.runner import Unsupported
+
+    with pytest.raises(Unsupported, match="unknown scheme"):
+        quant.apply(object(), "int3")
+    monkeypatch.setattr("torch.cuda.is_available", lambda: False)
+    for scheme in ("fp8", "int4-wo", "nf4"):
+        with pytest.raises(Unsupported, match="CUDA"):
+            quant.apply("model_dir", scheme)
+
+
+def test_apply_dtype_casts_and_load_trained_uses_it():
+    import torch
+
+    from datascience.perf import quant
+
+    assert quant.apply(torch.nn.Linear(2, 2), "fp16").weight.dtype == torch.float16
+    assert quant.apply(torch.nn.Linear(2, 2).half(), "fp32").weight.dtype == torch.float32
+
+
+def test_perf_entry_resolves(tmp_artifacts, monkeypatch):
+    from datascience.infer import perf_entry
+    from datascience.perf.runner import Unsupported, resolve_entry
+
+    ev = type("Ev", (), {"text_field": "text", "label_field": "label"})()
+    monkeypatch.setattr(perf_entry.ConfigurationManager, "evaluation", lambda self: ev)
+    monkeypatch.setattr(perf_entry.ConfigurationManager, "__init__", lambda self, *a, **k: None)
+
+    def write(path, rows):
+        path.write_text("".join(json.dumps(r) + "\n" for r in rows))
+
+    write(tmp_artifacts / "data_transformation" / "test.jsonl",
+          [{"text": t, "label": "a"} for t in ("mid text", "tiny", "the longest text of them all")])
+    write(tmp_artifacts / "data_transformation" / "val.jsonl",
+          [{"text": "x", "label": "a"}, {"text": "y", "label": "b"}, {"text": "z", "label": "a"}])
+
+    class FakePredictor:
+        labels = ["a", "b"]
+        schemes = []
+
+        def __init__(self, scheme=None):
+            FakePredictor.schemes.append(scheme)
+
+        def predict_batch(self, texts, batch_size=32):
+            return [{"label": "a", "score": 1.0} for _ in texts]
+
+    monkeypatch.setattr(perf_entry, "Predictor", FakePredictor)
+    monkeypatch.setattr(perf_entry, "VAL_SLICE", 2)
+
+    t = resolve_entry("datascience.infer.perf_entry:target")
+    assert t.lengths == ["short", "long"]
+    assert t.inputs("short", 2) == ["tiny", "mid text"]
+    assert t.inputs("long", 4)[0] == "the longest text of them all" and len(t.inputs("long", 4)) == 4
+    predict = t.predictor("torch", "int8-wo")
+    assert FakePredictor.schemes == ["int8-wo"] and len(predict(["q", "r"])) == 2
+    t.predictor("torch", "fp32")
+    assert FakePredictor.schemes[-1] is None
+    assert t.score(predict) == pytest.approx(1 / 3)   # slice = a,b vs all-"a": F1 2/3 and 0
+    with pytest.raises(Unsupported):
+        t.predictor("onnx", "fp32")
+
+    seen = {}
+    tt = perf_entry.TrainTarget.__new__(perf_entry.TrainTarget)
+    tt.trainer = type("T", (), {"build_trainer": lambda self, overrides: seen.update(overrides) or "trainer"})()
+    assert tt.build_trainer({"bf16": True}) == "trainer"
+    assert seen["bf16"] and seen["output_dir"].startswith(str(tmp_artifacts))   # scratch dir, not CKPT_DIR

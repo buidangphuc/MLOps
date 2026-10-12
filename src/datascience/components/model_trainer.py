@@ -72,9 +72,10 @@ def _histogram_callback(log_dir, every: int):
     return HistLogger()
 
 
-def training_kwargs(cfg: ModelTrainerConfig, batch_size: int, report_to: list) -> dict:
+def training_kwargs(cfg: ModelTrainerConfig, batch_size: int, report_to: list, overrides: dict | None = None) -> dict:
     """TrainingArguments kwargs. With `perf.apply_tuned` the throughput config tuned for this
-    box's train role is merged over them; a result tuned on another GPU raises HardwareMismatch."""
+    box's train role is merged over them; a result tuned on another GPU raises HardwareMismatch.
+    `overrides` (the perf sweep's knobs) win over both."""
     kwargs = dict(
         output_dir=str(paths.CKPT_DIR),
         learning_rate=cfg.lr,
@@ -103,7 +104,7 @@ def training_kwargs(cfg: ModelTrainerConfig, batch_size: int, report_to: list) -
         from datascience.perf.workloads.train import training_args
 
         kwargs.update(training_args(load_tuned("train", "train")))
-    return kwargs
+    return {**kwargs, **(overrides or {})}
 
 
 class ModelTrainer:
@@ -137,7 +138,9 @@ class ModelTrainer:
             raise
         set_run_status("train", "done")
 
-    def _run(self, batch_size: int):
+    def build_trainer(self, batch_size: int | None = None, overrides: dict | None = None):
+        """The HF Trainer for this config (data encoded, callbacks wired), with `overrides` merged
+        into its TrainingArguments. `_run` trains it; the perf train entry sweeps it."""
         cfg = self.config
         if cfg.finetune.method == "qat":
             raise NotImplementedError("group 3")
@@ -181,12 +184,19 @@ class ModelTrainer:
 
         trainer = Trainer(
             model=model,
-            args=TrainingArguments(**training_kwargs(cfg, batch_size, report_to)),
+            args=TrainingArguments(**training_kwargs(cfg, batch_size or cfg.train_batch_size, report_to, overrides)),
             train_dataset=train_ds,
             eval_dataset=val_ds,
             data_collator=lambda features: pad_batch(features, pad_id),
             callbacks=callbacks,
+            processing_class=tokenizer,
         )
+        return trainer
+
+    def _run(self, batch_size: int):
+        cfg = self.config
+        trainer = self.build_trainer(batch_size)
+        tokenizer = trainer.processing_class
 
         last_ckpt = _last_checkpoint(paths.CKPT_DIR)
         if last_ckpt:

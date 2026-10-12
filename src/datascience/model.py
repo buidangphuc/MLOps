@@ -98,15 +98,21 @@ def merge_adapters(model, cfg):
 
 
 def load_trained(model_dir, device: str = "cpu", scheme=None):
+    """(model, tokenizer) from a saved dir, optionally under a perf/quant scheme. Load-kind schemes
+    (nf4, bnb-int8) quantize while loading and place the model themselves; the rest load, then transform."""
     from transformers import AutoModelForCausalLM, AutoTokenizer
 
-    if scheme is not None:
-        raise NotImplementedError("quantization schemes are applied by perf/quant (group 2)")
+    from datascience.perf import quant
+
     tokenizer = AutoTokenizer.from_pretrained(model_dir)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
-    model = AutoModelForCausalLM.from_pretrained(model_dir).to(device).eval()
-    return model, tokenizer
+    if scheme and quant.SCHEMES.get(scheme, (None, None))[1] == "load":
+        model = quant.apply(model_dir, scheme)
+    else:
+        model = AutoModelForCausalLM.from_pretrained(model_dir).to(device)
+        model = quant.apply(model, scheme) if scheme else model
+    return model.eval(), tokenizer
 
 
 def save_pretrained_atomic(model, tokenizer, model_dir) -> None:

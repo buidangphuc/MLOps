@@ -20,7 +20,7 @@ from datascience.constants import paths
 ROLES = ("train", "infer")
 
 # min compute capability per feature (NVIDIA arch tables)
-_MIN_CC = {"fp16": 7.0, "bf16": 8.0, "tf32": 8.0, "fp8": 8.9}
+_MIN_CC = {"fp16": 7.0, "bf16": 8.0, "tf32": 8.0, "fp8": 8.9, "int8": 7.0, "int4": 8.0, "nf4": 7.0}
 
 
 class HardwareMismatch(RuntimeError):
@@ -129,7 +129,7 @@ def assert_role(role: str, fp: dict | None = None) -> dict:
 
 
 def supports(feature: str, role: str, targets: dict | None = None) -> bool:
-    """Does the role's TARGET GPU support `feature` (bf16/fp16/tf32/fp8)? Decided from the
+    """Does the role's TARGET GPU support `feature` (bf16/fp16/tf32/fp8/int8/int4/nf4)? Decided from the
     target, not from the current box — a bf16 serving config is wrong for a T4 endpoint even
     if it was measured on an A100."""
     cc = (targets or load_targets())[role].get("compute_capability")

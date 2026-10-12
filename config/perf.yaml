@@ -1,12 +1,14 @@
 # Perf platform defaults — `datascience perf tune <workload> --entry module:fn`.
 # Grids are cartesian; constraints prune; the best feasible trial by `objective` is stored
 # under artifacts/perf/<role>/<hw_id>/ (bound to the box it ran on — see hardware.yaml).
-# Precisions the role's TARGET GPU can't run (bf16 on a T4) are dropped before measuring.
+# Precisions the role's TARGET GPU can't run (bf16 / int4-wo / fp8 on a T4) are dropped before
+# measuring. Names are the PTQ schemes of perf/quant.py; torchao/bitsandbytes ones need the
+# `quant` extra and are recorded infeasible (not fatal) where the library is missing.
 
 infer:
   grid:
     backend: [torch]                      # the entry decides what each name builds
-    precision: [fp32, fp16, bf16, int8]
+    precision: [fp32, fp16, bf16, int8-wo, int8-dyn, int4-wo, nf4, fp8]
     batch_size: [1, 8, 16, 32]
   lengths: [short, long]                  # NOT tuned: every trial runs all, worst one counts
   objective: throughput                   # items/s

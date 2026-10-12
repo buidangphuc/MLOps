@@ -7,20 +7,21 @@ Task-agnostic: the model comes from `--entry module:fn`, which returns a target 
 
     predictor(backend: str, precision: str) -> predict(batch)   # raise Unsupported if n/a
     inputs(length: str, batch_size: int)    -> batch
-    score(predict) -> float          # optional; higher = better (e.g. span-F1 on a dev slice)
+    score(predict) -> float          # optional; higher = better (e.g. macro-F1 on a dev slice)
     backends / lengths: list[str]    # optional; override perf.yaml grid.backend / lengths
+    new_tokens: int                  # optional; tokens generated per item -> trials add tokens_per_s
 
 The builders below (`torch_precision`, `ort_session`, `quantize_int8`) cover the common
-backends so an entry stays a few lines. Precisions the INFER TARGET GPU can't run (bf16 on
-a T4) are dropped from the grid before anything is measured.
+backends so an entry stays a few lines. Precisions are the PTQ scheme names of perf/quant.py
+(fp16, bf16, int8-wo, ..., nf4) plus whatever a backend defines itself (ORT's `int8`). A scheme
+the INFER TARGET GPU can't run (bf16 on a T4) is dropped from the grid before anything is
+measured; any other name is kept and the backend raises Unsupported if it can't build it.
 """
 
 import numpy as np
 
-from datascience.perf.hw import supports
+from datascience.perf import quant
 from datascience.perf.runner import Unsupported, peak_mem_gb, reset_peak_mem, time_ms
-
-_FEATURE = {"fp16": "fp16", "bf16": "bf16"}  # precision -> hardware feature it needs
 
 
 class InferWorkload:
@@ -40,8 +41,8 @@ class InferWorkload:
         grid = {**grid}
         if getattr(self.target, "backends", None):
             grid["backend"] = list(self.target.backends)
-        grid["precision"] = [p for p in grid["precision"]
-                             if p not in _FEATURE or supports(_FEATURE[p], self.role, self.targets)]
+        can_run = quant.supported(self.role, self.targets)
+        grid["precision"] = [p for p in grid["precision"] if p in can_run or p not in quant.SCHEMES]
         self._baseline = (grid["backend"][0], "fp32")
         return grid_points(grid)
 
@@ -67,7 +68,7 @@ class InferWorkload:
     def trial(self, cfg: dict) -> dict:
         predict = self._predictor(cfg["backend"], cfg["precision"])
         reset_peak_mem()                                 # peak = this batch size, not the last
-        per_len = {}
+        per_len, new_tokens = {}, getattr(self.target, "new_tokens", None)
         for length in self.lengths:
             batch = self.target.inputs(length, cfg["batch_size"])
             lat = np.array(time_ms(lambda: predict(batch), self.iters, self.warmup))
@@ -76,10 +77,14 @@ class InferWorkload:
                 "p99_ms": round(float(np.percentile(lat, 99)), 3),
                 "throughput": round(cfg["batch_size"] * 1000.0 / float(lat.mean()), 1),
             }
+            if new_tokens:
+                per_len[length]["tokens_per_s"] = round(per_len[length]["throughput"] * new_tokens, 1)
+        tokens = {"tokens_per_s": min(m["tokens_per_s"] for m in per_len.values())} if new_tokens else {}
         return {
             "p50_ms": max(m["p50_ms"] for m in per_len.values()),
             "p99_ms": max(m["p99_ms"] for m in per_len.values()),
             "throughput": min(m["throughput"] for m in per_len.values()),
+            **tokens,
             "peak_mem_gb": peak_mem_gb(),
             **self._quality(cfg["backend"], cfg["precision"]),
             "by_length": per_len,
@@ -89,13 +94,12 @@ class InferWorkload:
 # --- builders an entry can reuse ----------------------------------------------------------
 
 def torch_precision(model, precision: str, compile: bool = False):
-    """Cast an nn.Module for inference. int8 isn't a torch-eager precision here (use ONNX)."""
+    """An nn.Module for inference under a perf/quant scheme (fp32/fp16/bf16 cast, torchao
+    int8/int4/fp8). nf4 / bnb-int8 load from a model dir (`quant.apply`); ORT's `int8` is not a
+    torch scheme (use ONNX)."""
     import torch
 
-    dtypes = {"fp32": torch.float32, "fp16": torch.float16, "bf16": torch.bfloat16}
-    if precision not in dtypes:
-        raise Unsupported(f"torch backend has no {precision}")
-    model = model.to("cuda" if torch.cuda.is_available() else "cpu", dtype=dtypes[precision]).eval()
+    model = quant.apply(model.to("cuda" if torch.cuda.is_available() else "cpu"), precision).eval()
     return torch.compile(model) if compile else model
 
 

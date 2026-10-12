@@ -11,11 +11,11 @@
 
 ## 2. PTQ schemes in the perf platform
 
-- [ ] 2.1 Add `perf/quant.py` (`SCHEMES`, `apply(model_or_dir, scheme)`, lazy imports, `Unsupported` on missing lib/device) and extend `hw._MIN_CC`. Verify: tests "T4 infer target" and "H100 infer target".
-- [ ] 2.2 `perf/workloads/infer.py`: filter precisions from `quant.SCHEMES`; `torch_precision` delegates non-dtype schemes to `quant.apply`; optional `new_tokens` → `tokens_per_s`. Verify: tests "Unsupported scheme never measured", "Backend cannot build a scheme", "Large quality drop rejected".
-- [ ] 2.3 `config/perf.yaml` infer precision grid `[fp32, fp16, bf16, int8-wo, int8-dyn, int4-wo, nf4, fp8]`.
-- [ ] 2.4 Add `infer/perf_entry.py` (`target()`, `train_target()`). Verify: test "Entry resolves" via `runner.resolve_entry` with the predictor stubbed.
-- [ ] 2.5 make test green
+- [x] 2.1 Add `perf/quant.py` (`SCHEMES`, `apply(model_or_dir, scheme)`, lazy imports, `Unsupported` on missing lib/device) and extend `hw._MIN_CC`. Verify: tests "T4 infer target" and "H100 infer target".
+- [x] 2.2 `perf/workloads/infer.py`: filter precisions from `quant.SCHEMES`; `torch_precision` delegates non-dtype schemes to `quant.apply`; optional `new_tokens` → `tokens_per_s`. Verify: tests "Unsupported scheme never measured", "Backend cannot build a scheme", "Large quality drop rejected".
+- [x] 2.3 `config/perf.yaml` infer precision grid `[fp32, fp16, bf16, int8-wo, int8-dyn, int4-wo, nf4, fp8]`.
+- [x] 2.4 Add `infer/perf_entry.py` (`target()`, `train_target()`). Verify: test "Entry resolves" via `runner.resolve_entry` with the predictor stubbed.
+- [x] 2.5 make test green
 
 ## 3. QAT
 
