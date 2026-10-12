@@ -60,7 +60,7 @@ def main(argv=None):
     if args.gpu:
         os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu
 
-    from src.datascience.pipeline import stages
+    from datascience.pipeline import stages
 
     cmd = args.command
     if cmd == "run":
@@ -78,19 +78,19 @@ def main(argv=None):
     elif cmd == "sanity":
         stages.run_sanity()
     elif cmd == "tune":
-        from src.datascience.tune.loop import run_tuning
+        from datascience.tune.loop import run_tuning
 
         run_tuning()
     elif cmd == "promote":
-        from src.datascience.tune.promote import promote
+        from datascience.tune.promote import promote
 
         promote(args.variant)
     elif cmd == "dapt":
-        from src.datascience.tune.dapt import run_dapt
+        from datascience.tune.dapt import run_dapt
 
         run_dapt()
     elif cmd == "infer":
-        from src.datascience.infer.predict import Predictor
+        from datascience.infer.predict import Predictor
 
         predictor = Predictor()
         if args.text:
@@ -102,32 +102,32 @@ def main(argv=None):
         else:
             raise SystemExit("infer needs --text or --input-file")
     elif cmd == "optimize":
-        from src.datascience.optimize import optimize
+        from datascience.optimize import optimize
 
         optimize()
     elif cmd == "package":
-        from src.datascience.package import package_bundle, package_triton
+        from datascience.package import package_bundle, package_triton
 
         (package_triton if args.target == "triton" else package_bundle)()
     elif cmd == "serve":
         if args.backend == "triton":
-            from src.datascience.serve.triton import serve_triton
+            from datascience.serve.triton import serve_triton
 
             serve_triton()
         else:
-            from src.datascience.serve.local import serve
+            from datascience.serve.local import serve
 
             serve(port=args.port)
     elif cmd == "deploy":
-        from src.datascience.serve.deploy_sagemaker import deploy_sagemaker
+        from datascience.serve.deploy_sagemaker import deploy_sagemaker
 
         deploy_sagemaker()
     elif cmd == "bench":
-        from src.datascience.bench import bench_local, bench_triton
+        from datascience.bench import bench_local, bench_triton
 
         (bench_triton if args.target == "triton" else bench_local)()
     elif cmd == "analyze":
-        from src.datascience.serve_analyzer import analyze
+        from datascience.serve_analyzer import analyze
 
         analyze()
 

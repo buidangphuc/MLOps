@@ -38,6 +38,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY main.py ./main.py
 COPY src ./src
 COPY config ./config
+# Imports are `datascience.*` (package lives under src/); no install step, just the path.
+ENV PYTHONPATH=/app/src
 
 # Empty CUDA_VISIBLE_DEVICES forces CPU regardless of serving.yaml device — Predictor's
 # pick_device() falls to CPU when no GPU is visible.

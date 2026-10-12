@@ -8,12 +8,12 @@ Heavy → run on the GPU box. Off the default path; you invoke it explicitly.
 
 from pathlib import Path
 
-from src.datascience import log
-from src.datascience.config.configuration import ConfigurationManager
-from src.datascience.constants import paths
-from src.datascience.entity.config_entity import DaptConfig
-from src.datascience.model import save_pretrained_atomic
-from src.datascience.utils.io import read_jsonl
+from datascience import log
+from datascience.config.configuration import ConfigurationManager
+from datascience.constants import paths
+from datascience.entity.config_entity import DaptConfig
+from datascience.model import save_pretrained_atomic
+from datascience.utils.io import read_jsonl
 
 
 def run_dapt(cfg: DaptConfig = None):
@@ -30,7 +30,7 @@ def run_dapt(cfg: DaptConfig = None):
         TrainingArguments,
     )
 
-    from src.datascience.components.model_trainer import _bf16_ok
+    from datascience.components.model_trainer import _bf16_ok
 
     rows = read_jsonl(Path(cfg.corpus), required_fields=["text"])
     log.info(f"DAPT: continuing masked-LM on {len(rows)} domain docs from {cfg.base_model}")

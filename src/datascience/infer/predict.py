@@ -9,12 +9,12 @@ import json
 
 from pathlib import Path
 
-from src.datascience import log
-from src.datascience.config.configuration import ConfigurationManager
-from src.datascience.constants import paths
-from src.datascience.metrics import softmax
-from src.datascience.model import load_label_map, load_trained
-from src.datascience.utils.runtime import pick_device
+from datascience import log
+from datascience.config.configuration import ConfigurationManager
+from datascience.constants import paths
+from datascience.metrics import softmax
+from datascience.model import load_label_map, load_trained
+from datascience.utils.runtime import pick_device
 
 
 class Predictor:

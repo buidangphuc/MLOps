@@ -1,7 +1,7 @@
 import os
 
-from src.datascience.constants import paths
-from src.datascience.entity.config_entity import (
+from datascience.constants import paths
+from datascience.entity.config_entity import (
     DaptConfig,
     DataIngestionConfig,
     IngestSource,
@@ -14,7 +14,7 @@ from src.datascience.entity.config_entity import (
     RegistryConfig,
     TuningConfig,
 )
-from src.datascience.utils.common import read_yaml
+from datascience.utils.common import read_yaml
 
 _REQUIRED_SECTIONS = ["ingestion", "data", "model", "training", "metrics", "gate", "tracking", "registry", "gliner"]
 # Span-level NER metrics (set-based over (example, entity_type) pairs), not classification ones.

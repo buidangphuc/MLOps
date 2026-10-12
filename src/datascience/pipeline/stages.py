@@ -6,17 +6,17 @@ Each stage is independently runnable (the CLI / DVC call them by name). The
 
 import json
 
-from src.datascience import log
-from src.datascience import registry
-from src.datascience.components.data_ingestion import DataIngestion
-from src.datascience.components.data_transformation import DataTransformation
-from src.datascience.components.data_validation import DataValidation
-from src.datascience.components.model_evaluation import ModelEvaluation
-from src.datascience.components.model_trainer import ModelTrainer
-from src.datascience.config.configuration import ConfigurationManager
-from src.datascience.constants import paths
-from src.datascience.gate import QualityGate
-from src.datascience.utils.io import read_data_version
+from datascience import log
+from datascience import registry
+from datascience.components.data_ingestion import DataIngestion
+from datascience.components.data_transformation import DataTransformation
+from datascience.components.data_validation import DataValidation
+from datascience.components.model_evaluation import ModelEvaluation
+from datascience.components.model_trainer import ModelTrainer
+from datascience.config.configuration import ConfigurationManager
+from datascience.constants import paths
+from datascience.gate import QualityGate
+from datascience.utils.io import read_data_version
 
 
 def _cm():
@@ -57,7 +57,7 @@ def run_evaluate():
 
 
 def run_sanity():
-    from src.datascience.sanity import run_sanity as _sanity
+    from datascience.sanity import run_sanity as _sanity
 
     _sanity(_cm().trainer())
 

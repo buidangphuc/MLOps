@@ -10,8 +10,8 @@ import os
 
 import yaml
 
-from src.datascience import log
-from src.datascience.constants import paths
+from datascience import log
+from datascience.constants import paths
 
 
 def _serving():
@@ -41,7 +41,7 @@ def _resolve_weights(sv):
     bucket = os.environ.get("S3_BUCKET") or reg.get("s3_bucket")
     prefix = os.environ.get("S3_PREFIX") or reg.get("s3_prefix")
     region = os.environ.get("AWS_REGION") or os.environ.get("AWS_DEFAULT_REGION") or reg.get("region")
-    from src.datascience.registry.s3 import S3Registry
+    from datascience.registry.s3 import S3Registry
 
     r = S3Registry(bucket=bucket, prefix=prefix, region=region, name=reg.get("name") or "GlinerNER")
     log.info(f"pulling weights from S3 registry: {r.name} version={version}")
@@ -50,7 +50,7 @@ def _resolve_weights(sv):
 
 def _load_predictor():
     """GLiNER Predictor on the configured device. runtime=onnx loads the optimized ONNX dir."""
-    from src.datascience.infer.predict import Predictor
+    from datascience.infer.predict import Predictor
 
     sv = _serving()
     device = "cpu" if sv.get("device") == "cpu" else None   # None => Predictor auto-picks cuda>cpu

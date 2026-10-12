@@ -21,7 +21,7 @@ from serving.yaml to pull.
 import json
 import os
 
-from src.datascience import log
+from datascience import log
 
 
 class S3Registry:

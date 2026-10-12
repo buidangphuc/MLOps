@@ -10,10 +10,10 @@ and register it in `_REMOTE_BACKENDS` below. Everything else stays the same.
 
 from typing import Protocol
 
-from src.datascience import log
-from src.datascience.constants import paths
-from src.datascience.entity.config_entity import RegistryConfig
-from src.datascience.registry.local import LocalRegistry
+from datascience import log
+from datascience.constants import paths
+from datascience.entity.config_entity import RegistryConfig
+from datascience.registry.local import LocalRegistry
 
 
 class RemoteRegistry(Protocol):
@@ -21,7 +21,7 @@ class RemoteRegistry(Protocol):
 
 
 # Seam: backend name -> factory(cfg) -> RemoteRegistry.
-from src.datascience.registry.s3 import from_config as _s3_from_config
+from datascience.registry.s3 import from_config as _s3_from_config
 
 _REMOTE_BACKENDS = {"s3": _s3_from_config}  # e.g. add {"mlflow": ..., "sagemaker": ...}
 

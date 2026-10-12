@@ -18,9 +18,9 @@ import os
 import tarfile
 import time
 
-from src.datascience import log
-from src.datascience.config.configuration import ConfigurationManager
-from src.datascience.constants import paths
+from datascience import log
+from datascience.config.configuration import ConfigurationManager
+from datascience.constants import paths
 
 _WAIT_TIMEOUT_S = 1800
 

@@ -12,7 +12,7 @@ import tempfile
 
 from pathlib import Path
 
-from src.datascience import log
+from datascience import log
 
 
 @contextlib.contextmanager
@@ -51,7 +51,7 @@ def data_fingerprint(path) -> dict:
 
 def read_data_version():
     """The data version written by `transform` (hash + n_rows), or None if absent."""
-    from src.datascience.constants import paths
+    from datascience.constants import paths
 
     return json.loads(paths.DATA_VERSION.read_text()) if paths.DATA_VERSION.exists() else None
 
