@@ -31,3 +31,13 @@ train:
   objective: samples_per_s
   mode: max
   constraints: {}
+
+kernel:                                   # perf tune kernel <name> [--role train|infer]
+  grid:
+    num_warps: [1, 2, 4, 8, 16]
+    num_stages: [1, 2, 3]
+  objective: ms
+  mode: min                               # correctness (max_abs_err vs torch) is enforced
+  layernorm:
+    dtype: fp16
+    shapes: [[4096, 768], [4096, 1024], [16384, 768]]   # (rows, hidden) — one sweep each

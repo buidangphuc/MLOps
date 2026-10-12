@@ -257,3 +257,51 @@ def test_busy_split_separates_memcpy_and_idle():
     s = busy_split(ev, wall_ms=10.0)
     assert (s["compute_ms"], s["memcpy_ms"], s["idle_ms"]) == (6.0, 2.0, 2.0)
     assert s["gpu_busy_frac"] == 0.8
+
+
+# --- kernel workload ----------------------------------------------------------------------
+
+def test_kernel_sweep_rejects_fast_but_wrong_config(tmp_artifacts, box, monkeypatch):
+    """Config 'fast' is quickest but numerically wrong -> the correct, slower one wins."""
+    import sys
+    from types import SimpleNamespace
+
+    from datascience.perf.runner import sweep
+    from datascience.perf.workloads.kernel import KernelWorkload
+
+    class _Out:  # the slice of the tensor API the harness uses for the error check
+        def __init__(self, v):
+            self.v = v
+
+        def float(self):
+            return self
+
+        def __sub__(self, o):
+            return _Out(self.v - o.v)
+
+        def abs(self):
+            return _Out(abs(self.v))
+
+        def max(self):
+            return self.v
+
+    # no GPU here: stub torch/triton; do_bench "times" by which config produced the output
+    monkeypatch.setitem(sys.modules, "torch", SimpleNamespace(
+        float16="f16", cuda=SimpleNamespace(synchronize=lambda: None)))
+    monkeypatch.setitem(sys.modules, "triton.testing", SimpleNamespace(
+        do_bench=lambda fn, **kw: 0.01 if fn().v == 1.5 else 0.02))
+    kernel = SimpleNamespace(
+        space=lambda shape, grid: [{"cfg": "fast"}, {"cfg": "ok"}],
+        make_inputs=lambda shape, dtype: None,
+        reference=lambda inputs: _Out(1.0),
+        run=lambda cfg, inputs: _Out(1.5 if cfg["cfg"] == "fast" else 1.0),
+        bytes_moved=lambda shape, dtype: 10**6,
+    )
+    wl = KernelWorkload("fake", [8, 16], "fp16", role="infer", module=kernel)
+
+    res = sweep(wl, {}, "ms", "min", wl.constraints(), fp=box(T4), track=False)
+
+    assert res["chosen"] == {"cfg": "ok"}
+    wrong = next(t for t in res["trials"] if t["config"]["cfg"] == "fast")
+    assert not wrong["feasible"] and "max_abs_err" in wrong["reason"]
+    assert store.load_tuned("infer", "kernel-fake-8x16-fp16", box(T4)) == {"cfg": "ok"}

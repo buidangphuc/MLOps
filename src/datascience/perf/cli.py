@@ -13,8 +13,11 @@ def add_parser(sub) -> None:
     sh.add_argument("--role", choices=ROLES)
     sh.add_argument("--hw", help="filter by hw_id")
     tn = ps.add_parser("tune", help="sweep a workload on this box, store the best (hardware-bound)")
-    tn.add_argument("workload", choices=["infer", "train"])
-    tn.add_argument("--entry", required=True, help="module:fn returning the model/trainer target")
+    tn.add_argument("workload", choices=["infer", "train", "kernel"])
+    tn.add_argument("kernel", nargs="?", help="kernel module under perf/kernels (perf tune kernel layernorm)")
+    tn.add_argument("--entry", help="module:fn returning the model/trainer target (infer/train)")
+    tn.add_argument("--role", choices=ROLES, default="train",
+                    help="kernel only: which target the result binds to")
     tn.add_argument("--no-track", action="store_true", help="skip MLflow logging")
     pr = ps.add_parser("profile", help="torch.profiler + NVML over N steady-state steps")
     pr.add_argument("workload", choices=["infer", "train"])
@@ -61,6 +64,22 @@ def _build(workload: str, entry: str, cfg: dict):
     raise ValueError(workload)
 
 
+def _tune_kernels(args) -> None:
+    from datascience.perf.hw import assert_role
+    from datascience.perf.runner import sweep
+    from datascience.perf.workloads.kernel import KernelWorkload
+
+    if not args.kernel:
+        raise SystemExit("perf tune kernel needs a kernel name, e.g. `perf tune kernel layernorm`")
+    cfg = _cfg("kernel")
+    fp = assert_role(args.role)
+    kcfg = cfg[args.kernel]
+    for shape in kcfg["shapes"]:
+        wl = KernelWorkload(args.kernel, shape, kcfg["dtype"], role=args.role)
+        sweep(wl, cfg["grid"], cfg["objective"], cfg["mode"], wl.constraints(), fp=fp,
+              track=not args.no_track)
+
+
 def dispatch(args) -> None:
     if args.perf_cmd == "fingerprint":
         from datascience.perf.hw import fingerprint, mismatches
@@ -76,10 +95,14 @@ def dispatch(args) -> None:
         for r in list_results(args.role, args.hw):
             print(f"{r['role']:>5}  {r['hw_id']}  {r['workload']:<12} trials={r['trials']:<3} "
                   f"chosen={json.dumps(r['chosen'])}")
+    elif args.perf_cmd == "tune" and args.workload == "kernel":
+        _tune_kernels(args)
     elif args.perf_cmd == "tune":
         from datascience.perf.hw import assert_role
         from datascience.perf.runner import sweep
 
+        if not args.entry:
+            raise SystemExit(f"perf tune {args.workload} needs --entry module:fn")
         cfg = _cfg(args.workload)
         fp = assert_role(args.workload)          # fail before loading any model on the wrong box
         sweep(_build(args.workload, args.entry, cfg), cfg["grid"], cfg["objective"],
