@@ -1,0 +1,17 @@
+Branch: `chore/repo-tidy` off `main` (6b12f64). One Sonnet worktree agent writes all changes (skill `openspec-fanout`); the change is mostly moves and deletes, so it is one packet.
+
+Shared contract (final paths):
+- `ops/docker-compose.yml`, `ops/.env.example`, `ops/README.md`, `ops/serve-cpu/{Dockerfile,requirements.txt}`, `ops/triton/docker-compose.yml` (was `infra/...`).
+- `docs/agents/project.md`, `docs/agents/pipeline.md`, `docs/usage.md`.
+
+## 1. Repo tidy
+
+Owns: delete `app.py`, `requirements-cpu.txt`, `requirements-gpu.txt`, `requirements-dev.txt`, `scripts/format.sh`, `research/**`, `.claude/**`, `CLAUDE.md`, `.agents/**`; untrack `artifacts/data_validation/status.txt`, `artifacts/model_evaluation/metrics.json` (`git rm --cached`); move `infra/**` to `ops/**`; `.gitignore`; new `docs/agents/project.md`, `docs/agents/pipeline.md`, `docs/usage.md`; `README.md`; `openspec/config.yaml`.
+
+- [ ] 1.1 Delete the dead files and dirs listed above (not `CLAUDE.md` / `.agents/` yet); add `.claude/` to `.gitignore` (replacing the narrower `.claude/worktrees/` line); untrack the two `artifacts/` files; verify `git ls-files app.py 'requirements-*.txt' scripts research .claude artifacts` is empty
+- [ ] 1.2 `git mv infra ops`; replace every `infra/` path inside the moved files (`ops/.env.example`, `ops/README.md`, `ops/serve-cpu/Dockerfile`); verify `git grep -n "infra/" -- ':!openspec/changes'` is empty and `docker compose -f ops/docker-compose.yml config -q` succeeds when docker is installed (skip otherwise, say so)
+- [ ] 1.3 `docs/agents/pipeline.md` = `.agents/ml-pipeline-repo/SKILL.md` as a plain doc: drop the skill frontmatter and "this file is where the rules live / CLAUDE.md routes here" text, keep every rule; `infra/` paths become `ops/`
+- [ ] 1.4 `docs/agents/project.md` in the setup-project format: `## Feedback loops` (`make test`, `make test-one k=...`; real-model/GPU smoke never on the Mac → `docs/usage.md#gpu-smoke`), `## Checks` (no CI: `pre-commit run --all-files` = detect-secrets, `make test`), `## Tracker` (GitHub `buidangphuc/MLOps`, OpenSpec changes in `openspec/changes/`, archived to `openspec/changes/archive/`, specs in `openspec/specs/`), `## Docs` (`docs/agents/pipeline.md`, `docs/usage.md`, `openspec/`), `## Hot paths` (paths only in `constants/paths.py`; `requirements.txt` = torch-free serving runtime kept in sync with `pyproject.toml`; `tmp_artifacts` fixture; tune variants vs perf knobs; `quant_scheme.json` / `train_stats.json`). Content as pointers, not repeated rules
+- [ ] 1.5 `README.md` ≤ ~60 lines: what it is (fine-tuning pipeline + GPU perf platform, hardware binding), scope/philosophy, layout tree with `ops/` and `docs/`, minimal quickstart, status (serving still GLiNER-shaped; GPU smoke passed on a V100 2026-10-12), links to `docs/usage.md`, `docs/agents/project.md`, `openspec/`. `docs/usage.md` takes the rest of the current README in substance (pipeline diagram, use-your-own-data, commands table, install profiles, config files, tracking) plus a `## GPU smoke` section copied from the PR #4 body runbook (`gh pr view 4 --json body -q .body`, section "Runbook"); verify every relative link in README, docs/usage.md, docs/agents/*.md resolves
+- [ ] 1.6 Delete `CLAUDE.md`, `.agents/`; `openspec/config.yaml` points to `docs/agents/project.md` and `docs/agents/pipeline.md`; verify `git grep -nE "\.agents/|CLAUDE\.md|SKILL\.md" -- ':!openspec/changes'` is empty
+- [ ] 1.7 make test green; `pre-commit run --all-files` passes; `datascience --help` lists the same commands as before
