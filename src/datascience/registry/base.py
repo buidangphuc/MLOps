@@ -28,6 +28,10 @@ _REMOTE_BACKENDS = {"s3": _s3_from_config}  # e.g. add {"mlflow": ..., "sagemake
 
 def register(model_dir, metrics: dict, metadata: dict, cfg: RegistryConfig) -> dict:
     result = {}
+    # lineage: which box produced this model (perf binding — see perf/hw.py)
+    from datascience.perf.hw import fingerprint
+
+    metadata = {**metadata, "train_hw": fingerprint()}
 
     local = LocalRegistry(root=str(paths.REGISTRY_DIR), name=cfg.name)
     result["local_version"] = local.register(str(model_dir), metrics, metadata)

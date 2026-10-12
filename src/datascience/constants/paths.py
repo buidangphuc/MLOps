@@ -13,6 +13,7 @@ CONFIG_DIR = PROJECT_ROOT / "config"
 PARAMS_FILE = CONFIG_DIR / "params.yaml"            # base experiment config (train + tuning)
 SERVING_FILE = CONFIG_DIR / "serving.yaml"          # serving lifecycle config (Phase 2)
 EXPERIMENTS_FILE = CONFIG_DIR / "experiments.yaml"  # the tuning loop: named variants
+HARDWARE_FILE = CONFIG_DIR / "hardware.yaml"        # train/infer GPU targets (perf binding)
 
 ARTIFACTS = PROJECT_ROOT / "artifacts"
 DATA_DIR = ARTIFACTS / "data_ingestion"
@@ -48,6 +49,9 @@ PARITY_FILE = OPTIMIZED_DIR / "parity.json"    # torch-vs-onnx parity-gate resul
 BUNDLE_DIR = ARTIFACTS / "bundle"              # self-contained deployable bundle
 TRITON_REPO = ARTIFACTS / "model_repository"   # Triton python-backend MME repo (per model)
 MME_TARS = ARTIFACTS / "mme_tars"              # per-model .tar.gz for SageMaker MME upload
+
+# Perf platform: tuned results bound to hardware -> <PERF_DIR>/<role>/<hw_id>/<workload>.json
+PERF_DIR = ARTIFACTS / "perf"
 
 # Tracking: hardcoded, absolute sqlite. Override silently via MLFLOW_TRACKING_URI env.
 MLFLOW_URI = f"sqlite:///{PROJECT_ROOT / 'mlflow.db'}"

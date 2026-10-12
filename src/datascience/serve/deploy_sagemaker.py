@@ -56,7 +56,10 @@ def _require(sm, keys):
 
 
 def _instance_type(sv, sm) -> str:
-    return sm.instance_type_cpu if sv.get("device", "gpu") == "cpu" else sm.instance_type_gpu
+    from datascience.perf.hw import load_targets
+
+    infer = load_targets()["infer"]
+    return infer["instance_type_cpu"] if sv.get("device", "gpu") == "cpu" else infer["instance_type"]
 
 
 def upload_mme(sv) -> str:

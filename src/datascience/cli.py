@@ -62,6 +62,10 @@ def build_parser() -> argparse.ArgumentParser:
     bn.add_argument("--target", choices=["local", "triton"], default="local")
     sub.add_parser("analyze", help="sweep Triton configs with Model Analyzer (prod-class GPU host)")
 
+    from datascience.perf.cli import add_parser as add_perf_parser
+
+    add_perf_parser(sub)
+
     return p
 
 
@@ -142,6 +146,10 @@ def main(argv=None):
         from datascience.serve_analyzer import analyze
 
         analyze()
+    elif cmd == "perf":
+        from datascience.perf.cli import dispatch
+
+        dispatch(args)
     elif cmd == "promote-stage":
         from datascience.registry.stages import assign_stage
 

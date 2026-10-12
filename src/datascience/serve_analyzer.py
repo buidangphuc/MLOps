@@ -4,7 +4,7 @@ This tunes serving PARAMS (instance_group, dynamic_batching, ...) against REAL t
 it runs AFTER the first deploy: capture real requests from the live endpoint, then replay
 them here so the optimal config reflects the real input + load — not synthetic inputs.
 `bench` measures one config; this sweeps and picks (NVIDIA Model Analyzer). Run on a
-prod-class GPU host (matches serving.sagemaker.instance_type).
+prod-class GPU host (matches hardware.yaml targets.infer).
 """
 
 import json

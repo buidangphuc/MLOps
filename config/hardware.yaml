@@ -1,0 +1,22 @@
+# Hardware targets — WHERE each role runs. Training and inference are declared separately on
+# purpose: every tuned perf result (batch size, precision, kernel config, serving config) is
+# bound to the box it was measured on (`hw_id`) and to a role. Applying it on a different GPU
+# is an error, never a silent "tuned on A, mapped onto B".
+#
+# Matching (perf/hw.py:assert_role): gpu_name is a case-insensitive substring of the NVML name;
+# compute_capability and gpu_count must be equal; VRAM must be >= min_vram_gb. `null` = FILL.
+# Check a box with:  datascience perf fingerprint
+targets:
+  train:
+    gpu_name: null              # FILL, e.g. "A100" / "L4" / "A10G"
+    compute_capability: null    # FILL, e.g. "8.0"
+    gpu_count: 1
+    min_vram_gb: null
+    instance_type: null         # informational (where training runs)
+  infer:
+    gpu_name: "T4"              # ml.g4dn.* — Turing sm_75: fp16 tensor cores, NO bf16
+    compute_capability: "7.5"
+    gpu_count: 1
+    min_vram_gb: 14
+    instance_type: ml.g4dn.xlarge   # SageMaker GPU endpoint (deploy, serving.device=gpu)
+    instance_type_cpu: ml.c5.xlarge # SageMaker CPU endpoint (serving.device=cpu, ~2-3x cheaper)
