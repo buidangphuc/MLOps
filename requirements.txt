@@ -1,7 +1,6 @@
-# PROD / serving runtime BASE (torch-free). onnxruntime is NOT here because the CPU and
-# GPU wheels are mutually exclusive — enable exactly one on top:
-#   CPU (local / CPU prod):  pip install -r requirements-cpu.txt
-#   GPU (prod GPU host):     pip install -r requirements-gpu.txt
+# PROD / serving runtime BASE (torch-free). Mirrors pyproject [project].dependencies; kept
+# as a real list because package.py bundles it into the Triton deps layer.
+# Install the package itself with: pip install -e .[cpu]   (or .[gpu], .[dev,cpu])
 transformers         # AutoTokenizer at serve time (no torch needed for tokenization)
 fastapi
 uvicorn

@@ -1,3 +1,2 @@
-# Serving runtime — GPU wheel (prod GPU host). Mutually exclusive with onnxruntime (CPU).
--r requirements.txt
-onnxruntime-gpu
+# Superseded by pyproject.toml — GPU serving runtime (mutually exclusive with cpu):
+.[gpu]
