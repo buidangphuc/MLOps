@@ -12,6 +12,7 @@ targets:
     compute_capability: null    # FILL, e.g. "8.0"
     gpu_count: 1
     min_vram_gb: null
+    peak_tflops: null           # optional: dense bf16/fp16 TFLOPS per GPU -> MFU in `perf tune train`
     instance_type: null         # informational (where training runs)
   infer:
     gpu_name: "T4"              # ml.g4dn.* — Turing sm_75: fp16 tensor cores, NO bf16

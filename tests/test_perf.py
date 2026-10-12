@@ -183,8 +183,8 @@ def test_infer_drops_bf16_for_t4_and_guards_quality(tmp_artifacts, box):
     from datascience.perf.workloads.infer import InferWorkload
 
     grid = {"backend": ["torch", "onnx"], "precision": ["fp32", "fp16", "bf16", "int8"],
-            "batch_size": [4], "length": ["short"]}
-    wl = InferWorkload(_FakeTarget(), iters=3, warmup=1, targets=TARGETS)
+            "batch_size": [4]}
+    wl = InferWorkload(_FakeTarget(), ["short", "long"], iters=3, warmup=1, targets=TARGETS)
     res = sweep(wl, grid, "throughput", constraints={"quality_drop": {"max": 0.01}},
                 fp=box(T4), track=False)
 
@@ -195,3 +195,50 @@ def test_infer_drops_bf16_for_t4_and_guards_quality(tmp_artifacts, box):
     assert by_cfg[("onnx", "fp16")]["reason"].startswith("unsupported")
     assert by_cfg[("torch", "fp16")]["feasible"]
     assert res["chosen"]["precision"] in ("fp32", "fp16")
+    assert set(res["chosen_metrics"]["by_length"]) == {"short", "long"}  # length measured, not chosen
+    assert "length" not in res["chosen"]
+
+
+# --- train workload -----------------------------------------------------------------------
+
+def test_effective_batch_is_preserved():
+    from datascience.perf.workloads.train import batch_candidates, grad_accum
+
+    assert batch_candidates(32, 2) == [1, 2, 4, 8, 16]
+    for b in batch_candidates(48, 4):
+        assert b * grad_accum(48, b, 4) * 4 == 48
+    with pytest.raises(ValueError):
+        grad_accum(32, 3, 1)
+
+
+def test_max_fit_bisects_to_largest_fitting():
+    from datascience.perf.workloads.train import max_fit
+
+    probed = []
+
+    def fits(b):
+        probed.append(b)
+        return b <= 12
+
+    assert max_fit([1, 2, 3, 4, 6, 8, 12, 16, 24, 48], fits) == 12
+    assert len(probed) <= 4                                   # log2(10) probes, not 10
+    with pytest.raises(RuntimeError, match="out of memory"):
+        max_fit([1, 2], lambda b: False)
+
+
+def test_train_space_respects_train_target():
+    from datascience.perf.workloads.train import TrainWorkload
+
+    t4_train = {**TARGETS, "train": TARGETS["infer"]}
+    wl = TrainWorkload(target=None, effective_batch=32, targets=t4_train)
+    cfgs = wl.space({"precision": ["fp32", "fp16", "bf16"], "tf32": [False, True]})
+    assert {c["precision"] for c in cfgs} == {"fp32", "fp16"}      # no bf16 on a T4 trainer
+    assert {c["tf32"] for c in cfgs} == {False}
+
+
+def test_training_args_mapping():
+    from datascience.perf.workloads.train import training_args
+
+    args = training_args({"precision": "bf16", "tf32": True, "per_device_batch": 8, "grad_accum": 4})
+    assert args["bf16"] and not args["fp16"] and args["tf32"]
+    assert args["per_device_train_batch_size"] == 8 and args["gradient_accumulation_steps"] == 4

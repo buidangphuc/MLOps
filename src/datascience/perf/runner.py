@@ -5,6 +5,7 @@ A workload is any object with:
     role: str            # "train" | "infer" — which hardware.yaml target it binds to
     space(grid) -> list[dict]     # the trial configs (workload may filter unsupported ones)
     trial(cfg)  -> dict           # metrics for one config; OOM / Unsupported -> infeasible
+                                  # (a "resolved" key merges into the stored config)
 
 Constraints are yaml-friendly: {"p99_ms": {"max": 50}, "quality_drop": {"max": 0.01}}.
 """
@@ -114,6 +115,7 @@ def sweep(workload, grid: dict, objective: str, mode: str = "max", constraints: 
             trials.append({"config": cfg, "metrics": {}, "feasible": False, "reason": "oom"})
             log.warning(f"[perf] {workload.name} {cfg}: OOM")
             continue
+        cfg = {**cfg, **metrics.pop("resolved", {})}  # e.g. an auto-fit batch size
         bad = violations(metrics, constraints)
         trials.append({"config": cfg, "metrics": metrics, "feasible": not bad,
                        "reason": "; ".join(bad) or None})

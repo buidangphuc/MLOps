@@ -8,7 +8,7 @@ infer:
     backend: [torch]                      # the entry decides what each name builds
     precision: [fp32, fp16, bf16, int8]
     batch_size: [1, 8, 16, 32]
-    length: [short, long]                 # the entry maps these to real input sizes
+  lengths: [short, long]                  # NOT tuned: every trial runs all, worst one counts
   objective: throughput                   # items/s
   mode: max
   constraints:
@@ -16,3 +16,18 @@ infer:
     quality_drop: {max: 0.01}             # vs the first backend at fp32 (needs entry.score)
   iters: 50
   warmup: 5
+
+train:
+  grid:
+    precision: [fp32, fp16, bf16]         # filtered by hardware.yaml targets.train capability
+    tf32: [false, true]                   # forced off when the train target has no TF32
+    torch_compile: [false, true]
+    gradient_checkpointing: [false, true]
+    dataloader_num_workers: [2, 8]
+    # per_device_batch: [8, 16]           # omit -> auto max-fit per combo
+  effective_batch: 32                     # per_device x grad_accum x gpus — held constant
+  steps: 30                               # timed steps per trial (after warmup)
+  warmup_steps: 5
+  objective: samples_per_s
+  mode: max
+  constraints: {}

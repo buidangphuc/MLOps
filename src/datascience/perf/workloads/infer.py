@@ -1,11 +1,14 @@
-"""INFER workload — backend × precision × batch × input-length sweep, quality-guarded.
+"""INFER workload — backend × precision × batch sweep, quality-guarded.
+
+Input length is TRAFFIC, not a knob: every trial is measured on each length bucket and
+scored on the worst one (max p99, min throughput), so the pick holds for long inputs too.
 
 Task-agnostic: the model comes from `--entry module:fn`, which returns a target with
 
     predictor(backend: str, precision: str) -> predict(batch)   # raise Unsupported if n/a
     inputs(length: str, batch_size: int)    -> batch
     score(predict) -> float          # optional; higher = better (e.g. span-F1 on a dev slice)
-    backends / lengths: list[str]    # optional; override the perf.yaml grid
+    backends / lengths: list[str]    # optional; override perf.yaml grid.backend / lengths
 
 The builders below (`torch_precision`, `ort_session`, `quantize_int8`) cover the common
 backends so an entry stays a few lines. Precisions the INFER TARGET GPU can't run (bf16 on
@@ -24,8 +27,10 @@ class InferWorkload:
     name = "infer"
     role = "infer"
 
-    def __init__(self, target, iters: int = 50, warmup: int = 5, targets: dict | None = None):
+    def __init__(self, target, lengths=("default",), iters: int = 50, warmup: int = 5,
+                 targets: dict | None = None):
         self.target, self.iters, self.warmup, self.targets = target, iters, warmup, targets
+        self.lengths = list(getattr(target, "lengths", None) or lengths)
         self._key, self._predict = None, None
         self._scores: dict = {}
 
@@ -33,9 +38,8 @@ class InferWorkload:
         from datascience.perf.runner import grid_points
 
         grid = {**grid}
-        for k in ("backends", "lengths"):
-            if getattr(self.target, k, None):
-                grid[k[:-1]] = list(getattr(self.target, k))
+        if getattr(self.target, "backends", None):
+            grid["backend"] = list(self.target.backends)
         grid["precision"] = [p for p in grid["precision"]
                              if p not in _FEATURE or supports(_FEATURE[p], self.role, self.targets)]
         self._baseline = (grid["backend"][0], "fp32")
@@ -62,14 +66,23 @@ class InferWorkload:
 
     def trial(self, cfg: dict) -> dict:
         predict = self._predictor(cfg["backend"], cfg["precision"])
-        batch = self.target.inputs(cfg["length"], cfg["batch_size"])
-        lat = np.array(time_ms(lambda: predict(batch), self.iters, self.warmup))
+        reset_peak_mem()                                 # peak = this batch size, not the last
+        per_len = {}
+        for length in self.lengths:
+            batch = self.target.inputs(length, cfg["batch_size"])
+            lat = np.array(time_ms(lambda: predict(batch), self.iters, self.warmup))
+            per_len[length] = {
+                "p50_ms": round(float(np.percentile(lat, 50)), 3),
+                "p99_ms": round(float(np.percentile(lat, 99)), 3),
+                "throughput": round(cfg["batch_size"] * 1000.0 / float(lat.mean()), 1),
+            }
         return {
-            "p50_ms": round(float(np.percentile(lat, 50)), 3),
-            "p99_ms": round(float(np.percentile(lat, 99)), 3),
-            "throughput": round(cfg["batch_size"] * 1000.0 / float(lat.mean()), 1),
+            "p50_ms": max(m["p50_ms"] for m in per_len.values()),
+            "p99_ms": max(m["p99_ms"] for m in per_len.values()),
+            "throughput": min(m["throughput"] for m in per_len.values()),
             "peak_mem_gb": peak_mem_gb(),
             **self._quality(cfg["backend"], cfg["precision"]),
+            "by_length": per_len,
         }
 
 

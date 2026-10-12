@@ -13,8 +13,8 @@ def add_parser(sub) -> None:
     sh.add_argument("--role", choices=ROLES)
     sh.add_argument("--hw", help="filter by hw_id")
     tn = ps.add_parser("tune", help="sweep a workload on this box, store the best (hardware-bound)")
-    tn.add_argument("workload", choices=["infer"])
-    tn.add_argument("--entry", required=True, help="module:fn returning the model target")
+    tn.add_argument("workload", choices=["infer", "train"])
+    tn.add_argument("--entry", required=True, help="module:fn returning the model/trainer target")
     tn.add_argument("--no-track", action="store_true", help="skip MLflow logging")
 
 
@@ -33,7 +33,11 @@ def _build(workload: str, entry: str, cfg: dict):
     if workload == "infer":
         from datascience.perf.workloads.infer import InferWorkload
 
-        return InferWorkload(target, iters=cfg["iters"], warmup=cfg["warmup"])
+        return InferWorkload(target, cfg["lengths"], iters=cfg["iters"], warmup=cfg["warmup"])
+    if workload == "train":
+        from datascience.perf.workloads.train import TrainWorkload
+
+        return TrainWorkload(target, cfg["effective_batch"], cfg["steps"], cfg["warmup_steps"])
     raise ValueError(workload)
 
 
