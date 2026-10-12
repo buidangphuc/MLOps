@@ -14,7 +14,8 @@ infer:
   objective: throughput                   # items/s
   mode: max
   constraints:
-    p99_ms: {max: 50}                     # latency budget per batch
+    p99_ms: {max: 200}                    # latency budget per batch; label scoring runs one forward
+                                          # per candidate label (4 for AG News): V100 fp16 bs8 = 150 ms
     quality_drop: {max: 0.01}             # vs the first backend at fp32 (needs entry.score)
   iters: 50
   warmup: 5
@@ -30,7 +31,9 @@ train:
   effective_batch: 32                     # per_device x grad_accum x gpus — held constant
   steps: 30                               # timed steps per trial (after warmup)
   warmup_steps: 5
-  objective: samples_per_s
+  amortize_steps: 500                     # ~optimizer steps of the run you'll launch: the startup
+                                          # (torch.compile ~5 min on a V100) is paid once per run
+  objective: samples_per_s_e2e            # whole-run throughput; samples_per_s = steady state only
   mode: max
   constraints: {}
 

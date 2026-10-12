@@ -5,6 +5,7 @@ from datascience import log
 from datascience.constants import paths
 from datascience.entity.config_entity import ModelTrainerConfig
 from datascience.infer.scoring import encode_example, pad_batch
+from datascience.perf.runner import peak_mem_gb, reset_peak_mem
 from datascience.model import (
     QUANT_SCHEME_FILE, bf16_ok, build_for_training, check_qat_scheme, load_label_map, merge_adapters, qat_prepare,
     save_pretrained_atomic, unwrap_fake_quant,
@@ -207,8 +208,9 @@ class ModelTrainer:
         last_ckpt = _last_checkpoint(paths.CKPT_DIR)
         if last_ckpt:
             log.info(f"resuming from checkpoint: {last_ckpt}")
+        reset_peak_mem()
         try:
-            trainer.train(resume_from_checkpoint=last_ckpt)
+            out = trainer.train(resume_from_checkpoint=last_ckpt)
         except KeyboardInterrupt:
             log.warning("interrupted — last checkpoint kept for resume")
             raise
@@ -221,3 +223,7 @@ class ModelTrainer:
         if qat:
             atomic_write_json(paths.MODEL_DIR / QUANT_SCHEME_FILE, {"scheme": qat})
         log.info(f"best model saved -> {paths.MODEL_DIR} (method={cfg.finetune.method})")
+        # what `tune` and `perf report` show next to quality: this run's speed and memory
+        atomic_write_json(paths.TRAIN_STATS, {"samples_per_s": out.metrics.get("train_samples_per_second"),
+                                              "runtime_s": out.metrics.get("train_runtime"),
+                                              "peak_mem_gb": peak_mem_gb()})

@@ -63,7 +63,8 @@ def _build(workload: str, entry: str, cfg: dict):
     if workload == "train":
         from datascience.perf.workloads.train import TrainWorkload
 
-        return TrainWorkload(target, cfg["effective_batch"], cfg["steps"], cfg["warmup_steps"])
+        return TrainWorkload(target, cfg["effective_batch"], cfg["steps"], cfg["warmup_steps"],
+                             amortize_steps=cfg.get("amortize_steps"))
     raise ValueError(workload)
 
 

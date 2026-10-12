@@ -26,6 +26,8 @@ def promote(variant: str):
     if entry is None:
         choices = [r["variant"] for r in results["runs"]]
         raise SystemExit(f"variant '{variant}' not found; choices: {choices}")
+    if "error" in entry:
+        raise SystemExit(f"variant '{variant}' failed during tuning: {entry['error']}")
 
     run_dir = paths.TUNE_DIR / variant
     metrics = json.loads((run_dir / "metrics.json").read_text())

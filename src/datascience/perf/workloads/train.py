@@ -67,19 +67,28 @@ def training_args(cfg: dict) -> dict:
     return out
 
 
+def e2e_samples_per_s(startup_s: float, step_s: float, run_steps: int, effective_batch: int) -> float:
+    """Throughput of a whole run of `run_steps`, paying the startup (compile, autotune) once.
+    Steady-state samples_per_s alone always favours torch.compile, even on runs too short to repay it."""
+    return run_steps * effective_batch / (startup_s + run_steps * step_s)
+
+
 def _timer(warmup_steps: int):
     import torch
     from transformers import TrainerCallback
 
     class StepTimer(TrainerCallback):
-        t0 = t1 = None
+        start = t0 = t1 = None
         steps = 0
+
+        def on_train_begin(self, args, state, control, **kw):
+            self.start = time.perf_counter()
 
         def on_step_end(self, args, state, control, **kw):
             if torch.cuda.is_available():
                 torch.cuda.synchronize()
             if state.global_step == warmup_steps:          # compile/cudnn autotune are warmup
-                self.t0 = time.perf_counter()
+                self.t0 = time.perf_counter()              # start -> t0 is the startup cost
             elif state.global_step > warmup_steps:
                 self.steps, self.t1 = self.steps + 1, time.perf_counter()
 
@@ -91,8 +100,9 @@ class TrainWorkload:
     role = "train"
 
     def __init__(self, target, effective_batch: int, steps: int = 30, warmup_steps: int = 5,
-                 targets: dict | None = None):
+                 targets: dict | None = None, amortize_steps: int | None = None):
         self.target, self.effective_batch = target, effective_batch
+        self.amortize_steps = amortize_steps
         self.steps, self.warmup_steps = steps, warmup_steps
         self.targets = targets or load_targets()
         self.gpus = self.targets["train"].get("gpu_count") or 1
@@ -142,9 +152,13 @@ class TrainWorkload:
         timer = self._run(cfg, per_device, self.steps + self.warmup_steps)
         elapsed = timer.t1 - timer.t0
         samples_s = timer.steps * self.effective_batch / elapsed
+        startup_s = timer.t0 - timer.start
         metrics = {
             "samples_per_s": round(samples_s, 2),
             "step_ms": round(elapsed / timer.steps * 1000, 2),
+            "startup_s": round(startup_s, 2),
+            "samples_per_s_e2e": round(e2e_samples_per_s(
+                startup_s, elapsed / timer.steps, self.amortize_steps or self.steps, self.effective_batch), 2),
             "peak_mem_gb": peak_mem_gb(),
             "resolved": {"per_device_batch": per_device,
                          "grad_accum": grad_accum(self.effective_batch, per_device, self.gpus)},

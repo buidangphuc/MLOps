@@ -29,6 +29,7 @@ def tmp_artifacts(tmp_path, monkeypatch):
         "LABEL_MAP": tmp_path / "data_transformation" / "label_map.json",
         "MODEL_DIR": tmp_path / "model_trainer" / "model",
         "CKPT_DIR": tmp_path / "model_trainer" / "checkpoints",
+        "TRAIN_STATS": tmp_path / "model_trainer" / "train_stats.json",
         "RUN_STATUS": tmp_path / "run_status.json",
     }
     for name, value in mapping.items():

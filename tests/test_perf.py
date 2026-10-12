@@ -252,6 +252,16 @@ def test_train_space_respects_train_target():
     assert {c["tf32"] for c in cfgs} == {False}
 
 
+def test_compile_startup_only_pays_off_on_long_runs():
+    """Measured on a V100: compile 105 vs 72 samples/s steady, but ~285 s extra startup."""
+    from datascience.perf.workloads.train import e2e_samples_per_s
+
+    eager = dict(startup_s=5.0, step_s=0.444, effective_batch=32)
+    compiled = dict(startup_s=290.0, step_s=0.303, effective_batch=32)
+    assert e2e_samples_per_s(run_steps=60, **eager) > e2e_samples_per_s(run_steps=60, **compiled)
+    assert e2e_samples_per_s(run_steps=5000, **compiled) > e2e_samples_per_s(run_steps=5000, **eager)
+
+
 def test_training_args_mapping():
     from datascience.perf.workloads.train import training_args
 

@@ -272,6 +272,7 @@ def test_trainer_runs_and_saves_a_plain_model(tmp_artifacts, tiny_dir, cm):
     from transformers import AutoModelForCausalLM
 
     assert not any("lora" in n for n, _ in AutoModelForCausalLM.from_pretrained(paths.MODEL_DIR).named_parameters())
+    assert json.loads(paths.TRAIN_STATS.read_text())["samples_per_s"] > 0
 
 
 def test_perf_sweep_overrides_build_a_trainer_that_runs(tmp_artifacts, tiny_dir, cm):

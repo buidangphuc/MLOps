@@ -82,6 +82,7 @@ Three layers share one package (`src/datascience`, imported as `datascience`):
   - `sweep` and `perf tune` call `assert_role` against `hardware.yaml targets.<role>`, so the infer config is tuned on the infer GPU.
 - **Capability comes from the target, not the box.** `supports("bf16", "infer")` reads `targets.infer`; a T4 never gets bf16 even when the sweep runs on an A100.
 - **Effective batch is constant** in `perf tune train`: per-device batch × grad_accum × GPUs = `effective_batch`. Tuning changes speed only.
+- **Train objective is whole-run throughput** (`samples_per_s_e2e`): the startup measured before the timed steps (torch.compile took ~5 min on a V100) is paid once over `amortize_steps` in `perf.yaml`. Set it near the real run's optimizer steps, or compile wins sweeps it loses in practice.
 - **Apply tuned:** `perf.apply_tuned` (off by default) makes the trainer merge `load_tuned("train", "train")`; a result from another GPU stops training.
 - **Quality guard.** Infer candidates must satisfy `quality_drop ≤` the constraint, measured against the first backend at fp32. Kernel configs must match the torch reference within `max_abs_err`.
 - **Inputs are traffic, not knobs.** Infer measures every length bucket and scores the worst one. Kernels run one sweep per shape.
@@ -108,6 +109,8 @@ Three layers share one package (`src/datascience`, imported as `datascience`):
 - The `quant` extra is GPU-only. bitsandbytes and torchao import lazily; when missing, the scheme raises `Unsupported` and the sweep records it infeasible.
 - `serving.runtime` defaults to `torch`; `onnx` is opt-in and needs `optimize` and `package` first. Never auto-convert.
 - The tuning loop clears `CKPT_DIR` between variants. Otherwise auto-resume loads a mismatched checkpoint.
+- A failing tune variant is recorded with its `error` in `results.json` and ranked last; the loop exits non-zero after ranking the rest, and `promote` refuses it.
+- `CUDA_VISIBLE_DEVICES` defines the box: the fingerprint counts only visible GPUs, so pin one GPU on a shared machine before `perf` commands.
 - The CPU serving image runs from source with `PYTHONPATH=/app/src`. Everywhere else, install with `pip install -e .`.
 
 ## Deferred (not built)
