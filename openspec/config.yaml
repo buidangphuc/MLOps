@@ -1,11 +1,11 @@
 schema: spec-driven
 
 # Project context shown to AI when creating artifacts. The rules themselves live in
-# .agents/ml-pipeline-repo/SKILL.md (single source of truth) — read it, don't restate it here.
+# docs/agents/pipeline.md (single source of truth) — read it, don't restate it here.
 context: |
   Python MLOps repo, package `datascience` (src/datascience), Python 3.11, HF transformers + torch.
   Three layers: fine-tuning pipeline, serving/registry platform, GPU perf platform (perf/).
-  Rules, invariants and gotchas: .agents/ml-pipeline-repo/SKILL.md.
+  Project facts: docs/agents/project.md. Rules, invariants and gotchas: docs/agents/pipeline.md.
   Tests: `make test` (offline, no GPU, no downloads; `tmp_artifacts` fixture in tests/conftest.py).
   Only pre-commit hook: detect-secrets. All artifacts are written in English.
 

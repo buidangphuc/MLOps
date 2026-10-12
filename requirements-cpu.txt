@@ -1,2 +1,0 @@
-# Superseded by pyproject.toml — CPU serving runtime:
-.[cpu]

@@ -1,2 +1,0 @@
-# Superseded by pyproject.toml — dev/training stack (editable):
--e .[dev,cpu]
