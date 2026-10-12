@@ -131,8 +131,8 @@ class Rigged(torch.nn.Module):
         super().__init__()
         self.anchor, self.favourite, self.vocab = torch.nn.Parameter(torch.zeros(1)), favourite, vocab
 
-    def forward(self, input_ids, attention_mask=None):
-        logits = torch.zeros(*input_ids.shape, self.vocab)
+    def forward(self, input_ids, attention_mask=None, position_ids=None, logits_to_keep=0):
+        logits = torch.zeros(*input_ids.shape, self.vocab)[:, -logits_to_keep:]
         logits[..., self.favourite] = 10.0
         return type("Out", (), {"logits": logits})
 
@@ -149,6 +149,22 @@ def test_scoring_a_real_model_gives_one_finite_score_per_label(tiny, cm):
     model, tok = tiny
     scores = score_labels(model, tok, cm.task(), ["stocks rally", "team wins"], LABELS, max_length=64)
     assert scores.shape == (2, 4) and np.isfinite(scores).all() and (scores <= 0).all()
+
+
+def test_scoring_matches_one_example_at_a_time(tiny, cm):
+    """Batched left-padded scoring on the last positions == unpadded full-sequence scoring."""
+    model, tok = tiny
+    texts = ["stocks rally on strong earnings today", "team wins"]
+    batched = score_labels(model, tok, cm.task(), texts, LABELS, max_length=64, batch_size=8)
+    for i, t in enumerate(texts):
+        for j, lb in enumerate(LABELS):
+            ex = pad_batch([encode_example(tok, cm.task(), t, lb, LABELS, 64)], tok.pad_token_id)
+            with torch.no_grad():
+                logp = torch.log_softmax(model(input_ids=ex["input_ids"]).logits[:, :-1].float(), -1)
+            target = ex["labels"][:, 1:]
+            mask = target != IGNORE
+            ref = (logp.gather(-1, target.clamp(min=0).unsqueeze(-1)).squeeze(-1) * mask).sum() / mask.sum()
+            assert abs(batched[i, j] - ref.item()) < 1e-4
 
 
 # --- fine-tune methods ----------------------------------------------------------------
@@ -184,6 +200,8 @@ def test_qat_scheme_the_serving_gpu_cannot_run_stops_before_any_step(tmp_artifac
         raise AssertionError("a model was built")
 
     monkeypatch.setattr("datascience.components.model_trainer.build_for_training", boom)
+    t4 = {"gpu_name": "T4", "compute_capability": "7.5", "gpu_count": 1, "min_vram_gb": 14}
+    monkeypatch.setattr("datascience.perf.hw.load_targets", lambda: {"train": t4, "infer": t4})
     cfg = _trainer_cfg(cm, tiny_dir, "qat")
     cfg = dataclasses.replace(cfg, finetune=dataclasses.replace(cfg.finetune, qat_scheme="int4-wo"))
     with pytest.raises(Unsupported, match=r"int4-wo.*T4.*7\.5"):
@@ -254,6 +272,18 @@ def test_trainer_runs_and_saves_a_plain_model(tmp_artifacts, tiny_dir, cm):
     from transformers import AutoModelForCausalLM
 
     assert not any("lora" in n for n, _ in AutoModelForCausalLM.from_pretrained(paths.MODEL_DIR).named_parameters())
+
+
+def test_perf_sweep_overrides_build_a_trainer_that_runs(tmp_artifacts, tiny_dir, cm):
+    """`perf tune train` turns eval/save off; the trainer must still train (no early stopping)."""
+    rows = [{"text": x, "label": lb} for lb in LABELS[:2] for x in ("stocks rally", "team wins")]
+    for f in (paths.TRAIN_FILE, paths.VAL_FILE):
+        f.write_text("\n".join(json.dumps(r) for r in rows))
+    paths.LABEL_MAP.write_text(json.dumps({"label2id": {"Business": 0, "Sci": 1}, "id2label": {"0": "Business", "1": "Sci"}}))
+    cfg = _trainer_cfg(cm, tiny_dir, "full", epochs=1, tracking_backend="none", max_length=64)
+    trainer = ModelTrainer(cfg).build_trainer(overrides={
+        "max_steps": 1, "save_strategy": "no", "eval_strategy": "no", "report_to": []})
+    trainer.train()
 
 
 # --- evaluation -----------------------------------------------------------------------

@@ -42,11 +42,22 @@ def qat_prepare(model, scheme):
 
     ao = quant._import("torchao.quantization")
     try:
-        from torchao.quantization.qat import QATConfig
+        from torchao.quantization.qat import IntxFakeQuantizeConfig, QATConfig
     except ImportError as e:
         raise quant.Unsupported("installed torchao has no QATConfig (pip install -e .[quant])") from e
-    base = getattr(ao, quant._TORCHAO[scheme])()
-    ao.quantize_(model, QATConfig(base, step="prepare"))
+    if scheme == "int8-dyn":
+        # QATConfig can't infer fake-quant from Int8DynamicActivationInt8WeightConfig: spell out
+        # the serving scheme (int8 per-token activations, symmetric per-channel weights). Activations
+        # are asymmetric here: torchao QAT has no symmetric per-token fake-quant.
+        import torch
+
+        config = QATConfig(
+            activation_config=IntxFakeQuantizeConfig(torch.int8, "per_token", is_symmetric=False),
+            weight_config=IntxFakeQuantizeConfig(torch.int8, "per_channel", is_symmetric=True),
+            step="prepare")
+    else:
+        config = QATConfig(getattr(ao, quant._TORCHAO[scheme])(), step="prepare")
+    ao.quantize_(model, config)
     return model
 
 

@@ -180,16 +180,16 @@ class ModelTrainer:
             report_to.append("tensorboard")
             os.environ["TENSORBOARD_LOGGING_DIR"] = str(paths.LOG_DIR / "tensorboard")
 
-        callbacks = [
-            EarlyStoppingCallback(early_stopping_patience=cfg.patience),
-            _nan_guard_callback(),
-        ]
+        args = TrainingArguments(**training_kwargs(cfg, batch_size or cfg.train_batch_size, report_to, overrides))
+        callbacks = [_nan_guard_callback()]
+        if args.eval_strategy != "no":   # the perf sweep turns eval off; early stopping needs it
+            callbacks.insert(0, EarlyStoppingCallback(early_stopping_patience=cfg.patience))
         if cfg.log_histograms:
             callbacks.append(_histogram_callback(paths.LOG_DIR / "tensorboard", every=20))
 
         trainer = Trainer(
             model=model,
-            args=TrainingArguments(**training_kwargs(cfg, batch_size or cfg.train_batch_size, report_to, overrides)),
+            args=args,
             train_dataset=train_ds,
             eval_dataset=val_ds,
             data_collator=lambda features: pad_batch(features, pad_id),

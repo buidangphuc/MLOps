@@ -36,6 +36,22 @@ def test_hw_id_stable_and_gpu_specific(box):
     assert box(T4, T4)["hw_id"] != t4          # count is part of the key
 
 
+def test_visible_devices_limit_the_fingerprint(monkeypatch):
+    """A shared 8-GPU box pinned to one GPU fingerprints as 1x (NVML ignores the env var)."""
+    from types import SimpleNamespace
+
+    nvml = SimpleNamespace(nvmlDeviceGetCount=lambda: 8, nvmlDeviceGetHandleByIndex=lambda i: f"idx{i}",
+                           nvmlDeviceGetHandleByUUID=lambda u: u)
+    monkeypatch.delenv("CUDA_VISIBLE_DEVICES", raising=False)
+    assert len(hw._visible_handles(nvml)) == 8
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "7")
+    assert hw._visible_handles(nvml) == ["idx7"]
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "GPU-abc,3")
+    assert hw._visible_handles(nvml) == ["GPU-abc", "idx3"]
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "")
+    assert hw._visible_handles(nvml) == []
+
+
 def test_sw_versions_do_not_change_hw_id(box, monkeypatch):
     a = box(T4)["hw_id"]
     monkeypatch.setattr(hw, "_version", lambda *d: "999")

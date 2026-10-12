@@ -35,5 +35,5 @@ Owns: `src/datascience/perf/report.py` (new), `src/datascience/perf/cli.py`, `te
 ## 5. Docs and end-to-end check
 
 - [x] 5.1 Update `.agents/ml-pipeline-repo/SKILL.md` (known-broken narrowed to serving/package, "fine-tune methods vs perf knobs" rule, schemes pointer, trainer hook wired) and README (`quant` extra, `perf report`, methods). Verify: no stale reference to `params.gliner` or `tuning.lora`.
-- [ ] 5.2 CPU smoke: Qwen2.5-0.5B, `sample_size: 200`, `max_steps: 5`, run `ingest → evaluate` for `full` and `lora`; `perf tune infer --entry datascience.infer.perf_entry:target` with `fp32, int8-dyn`; `perf report`. Verify: metrics.json, stored result with quality_drop, printed report.
+- [x] 5.2 Smoke on a real GPU (DGX V100, sm_70, 2026-10-12; the Mac lacks RAM): Qwen2.5-0.5B, `sample_size: 2000`, `max_steps: 60`; `run` (full), `tune` (baseline/lora/qlora/qat-int8), `perf tune infer` (fp32/fp16/int8-wo/int8-dyn/nf4; bf16/int4-wo/fp8 filtered), `perf tune train`, `perf report`, `perf.apply_tuned`. Fixed: NVML ignoring CUDA_VISIBLE_DEVICES, QAT int8-dyn base config, full-vocab scoring memory, early stopping under the perf sweep.
 - [x] 5.3 make test green

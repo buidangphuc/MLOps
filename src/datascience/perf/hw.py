@@ -36,6 +36,16 @@ def _version(*dists):
     return None
 
 
+def _visible_handles(pynvml) -> list:
+    """NVML sees every GPU on the box; honour CUDA_VISIBLE_DEVICES (index or UUID) like torch."""
+    env = os.environ.get("CUDA_VISIBLE_DEVICES")
+    if env is None:
+        return [pynvml.nvmlDeviceGetHandleByIndex(i) for i in range(pynvml.nvmlDeviceGetCount())]
+    ids = [d.strip() for d in env.split(",") if d.strip()]
+    return [pynvml.nvmlDeviceGetHandleByIndex(int(d)) if d.isdigit()
+            else pynvml.nvmlDeviceGetHandleByUUID(d) for d in ids]
+
+
 def _gpus() -> tuple[list[dict], dict]:
     try:
         import pynvml
@@ -45,8 +55,7 @@ def _gpus() -> tuple[list[dict], dict]:
         return [], {}
     try:
         gpus = []
-        for i in range(pynvml.nvmlDeviceGetCount()):
-            h = pynvml.nvmlDeviceGetHandleByIndex(i)
+        for h in _visible_handles(pynvml):
             name = pynvml.nvmlDeviceGetName(h)
             major, minor = pynvml.nvmlDeviceGetCudaComputeCapability(h)
             gpus.append({

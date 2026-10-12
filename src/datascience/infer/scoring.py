@@ -55,23 +55,26 @@ def encode_example(tokenizer, task, text, label, labels, max_length=None) -> dic
     }
 
 
-def pad_batch(features, pad_id) -> dict:
-    """Right-pad encoded examples into tensors; padding gets attention 0 and label IGNORE."""
+def pad_batch(features, pad_id, left=False) -> dict:
+    """Pad encoded examples into tensors (right by default; `left` lines up every completion at the
+    end, which scoring needs); padding gets attention 0 and label IGNORE."""
     import torch
 
     width = max(len(f["input_ids"]) for f in features)
     batch = {"input_ids": [], "attention_mask": [], "labels": []}
     for f in features:
         gap = width - len(f["input_ids"])
-        batch["input_ids"].append(f["input_ids"] + [pad_id] * gap)
-        batch["attention_mask"].append(f["attention_mask"] + [0] * gap)
-        batch["labels"].append(f["labels"] + [IGNORE] * gap)
+        for k, fill in (("input_ids", pad_id), ("attention_mask", 0), ("labels", IGNORE)):
+            batch[k].append([fill] * gap + f[k] if left else f[k] + [fill] * gap)
     return {k: torch.tensor(v) for k, v in batch.items()}
 
 
 def score_labels(model, tokenizer, task, texts, labels, max_length=None, batch_size=16) -> np.ndarray:
     """[len(texts), len(labels)] mean per-token log-likelihood of each label completion (label
-    tokens + EOS) given the prompt. Length-normalised so short label names are not favoured."""
+    tokens + EOS) given the prompt. Length-normalised so short label names are not favoured.
+
+    Left padding puts every completion in the last positions, so the LM head only runs there
+    (`logits_to_keep`): a full [batch, seq, vocab] fp32 log-softmax is GBs on a 152k vocab."""
     import torch
 
     pad_id = tokenizer.pad_token_id if tokenizer.pad_token_id is not None else tokenizer.eos_token_id
@@ -81,11 +84,14 @@ def score_labels(model, tokenizer, task, texts, labels, max_length=None, batch_s
     device = next(model.parameters()).device
     for i in range(0, len(pairs), batch_size):
         feats = [encode_example(tokenizer, task, t, lb, labels, max_length) for t, lb in pairs[i : i + batch_size]]
-        batch = {k: v.to(device) for k, v in pad_batch(feats, pad_id).items()}
+        batch = {k: v.to(device) for k, v in pad_batch(feats, pad_id, left=True).items()}
+        keep = int((batch["labels"] != IGNORE).sum(-1).max()) + 1   # completion + the token before it
+        position_ids = (batch["attention_mask"].cumsum(-1) - 1).clamp(min=0)
         with torch.no_grad():
-            logits = model(input_ids=batch["input_ids"], attention_mask=batch["attention_mask"]).logits
+            logits = model(input_ids=batch["input_ids"], attention_mask=batch["attention_mask"],
+                           position_ids=position_ids, logits_to_keep=keep).logits
         logp = torch.log_softmax(logits[:, :-1].float(), dim=-1)
-        target = batch["labels"][:, 1:]
+        target = batch["labels"][:, -(keep - 1):]
         mask = target != IGNORE
         token_lp = logp.gather(-1, target.clamp(min=0).unsqueeze(-1)).squeeze(-1)
         out.append(((token_lp * mask).sum(-1) / mask.sum(-1)).cpu().numpy())
