@@ -1,0 +1,8 @@
+*
+!ops/serve/app/
+!ops/serve/requirements.txt
+!packs/__init__.py
+!packs/*/*.py
+!packs/*/serving-requirements.txt
+**/__pycache__
+**/*.pyc

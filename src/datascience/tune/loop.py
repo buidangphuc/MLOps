@@ -14,45 +14,26 @@ import shutil
 import yaml
 
 from datascience import log
-from datascience.components.model_evaluation import ModelEvaluation
-from datascience.components.model_trainer import ModelTrainer
 from datascience.config.configuration import ConfigurationManager
 from datascience.constants import paths
-
-
-def _deep_merge(base: dict, override: dict) -> dict:
-    """Recursively overlay `override` onto `base` (variant overrides win)."""
-    out = dict(base)
-    for k, v in (override or {}).items():
-        if isinstance(v, dict) and isinstance(out.get(k), dict):
-            out[k] = _deep_merge(out[k], v)
-        else:
-            out[k] = v
-    return out
+from datascience.pipeline import stages
+from datascience.tune.variants import load_experiments, resolve_variant
 
 
 def run_tuning():
-    exp = yaml.safe_load(paths.EXPERIMENTS_FILE.read_text())
+    exp = load_experiments()
     experiment_name = exp.get("experiment_name", "tuning")
-    base = yaml.safe_load(paths.PARAMS_FILE.read_text())
-    objective = base["metrics"]["objective"]
+    objective = yaml.safe_load(paths.PARAMS_FILE.read_text())["metrics"]["objective"]
 
     results = []
     for variant in exp["variants"]:
-        variant = dict(variant)
-        name = variant.pop("name")
+        name = variant["name"]
         log.info(f">>>>>> tuning variant '{name}' <<<<<<")
 
-        # resolved config = base + sparse override; group all variants in one experiment
-        merged = _deep_merge(base, variant)
-        merged.setdefault("tracking", {})["experiment_name"] = experiment_name
-
-        run_dir = paths.TUNE_DIR / name
-        if run_dir.exists():
-            shutil.rmtree(run_dir)
-        run_dir.mkdir(parents=True, exist_ok=True)
-        config_path = run_dir / "config.yaml"
-        config_path.write_text(yaml.safe_dump(merged, sort_keys=False))
+        # Same resolution path as `train --variant <name>`, plus the shared experiment
+        # name so all variants land in one MLflow experiment for side-by-side comparison.
+        config_path = resolve_variant(name, experiment_name=experiment_name, clean=True)
+        run_dir = config_path.parent
 
         # fresh checkpoints per variant (else auto-resume picks up the previous variant's)
         shutil.rmtree(paths.CKPT_DIR, ignore_errors=True)
@@ -76,6 +57,8 @@ def run_tuning():
         # snapshot model + metrics so this variant can be promoted after the loop
         shutil.copytree(paths.MODEL_DIR, run_dir / "model")
         (run_dir / "metrics.json").write_text(json.dumps(metrics, indent=2))
+        if paths.DATA_VERSION.exists():
+            shutil.copy2(paths.DATA_VERSION, run_dir / "data_version.json")
 
         results.append({
             "variant": name,
@@ -102,32 +85,32 @@ def run_tuning():
 
 
 def _train_eval_one(cm, variant):
-    """Train + eval one variant; return its MLflow run_id (None if tracking off).
+    """Run the pack's stages up to `evaluate` for one variant (no registration); return the
+    training MLflow run_id (None if tracking off). Stages after `evaluate` only warn."""
+    config_path = paths.TUNE_DIR / variant / "config.yaml"
+    all_names = stages.names()
+    cut = all_names.index("evaluate") + 1
+    paths.TRAIN_RUN_FILE.unlink(missing_ok=True)
+    for name in all_names[:cut]:
+        stages.run_stage(name, config_path, register=False)
 
-    HF auto-logs its TrainingArguments to the run; we additionally tag the run and
-    attach the full resolved config + test metrics so the experiment is fully versioned.
-    """
-    use_mlflow = cm.trainer().tracking_backend == "mlflow"
-    if use_mlflow:
+    run_id = json.loads(paths.TRAIN_RUN_FILE.read_text())["run_id"] if paths.TRAIN_RUN_FILE.exists() else None
+    if cm.params.tracking.backend == "mlflow" and run_id:
         import mlflow
 
         mlflow.set_tracking_uri(cm.tracking_uri())
-
-    ModelTrainer(cm.trainer()).train()
-    run_id = None
-    if use_mlflow:
-        last = mlflow.last_active_run()
-        run_id = last.info.run_id if last else None
-
-    ModelEvaluation(cm.evaluation()).evaluate()
-
-    if use_mlflow and run_id:
         metrics = json.loads(paths.METRICS_FILE.read_text())
         scalar = {k: v for k, v in metrics.items() if isinstance(v, (int, float))}
         with mlflow.start_run(run_id=run_id):
             mlflow.set_tag("variant", variant)
-            mlflow.log_artifact(str(paths.TUNE_DIR / variant / "config.yaml"))
+            mlflow.log_artifact(str(config_path))
             mlflow.log_metrics({f"test_{k}": v for k, v in scalar.items()})
+
+    for name in all_names[cut:]:
+        try:
+            stages.run_stage(name, config_path, register=False)
+        except RuntimeError as e:
+            log.warning(f"[tune] {variant}: {name} failed, keeping the variant: {e}")
     return run_id
 
 

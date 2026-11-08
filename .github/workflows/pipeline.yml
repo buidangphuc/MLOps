@@ -1,0 +1,60 @@
+name: pipeline
+
+on:
+  workflow_dispatch:
+    inputs:
+      model:
+        description: model id (config/<id>/)
+        default: text_classification
+      start:
+        description: start an execution after the upsert
+        type: boolean
+        default: true
+  push:
+    branches: [main]
+    paths:
+      - "packs/**"
+      - "config/**"
+      - "src/**"
+      - "ops/train/**"
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: pipeline-${{ inputs.model || 'text_classification' }}
+
+jobs:
+  pipeline:
+    runs-on: ubuntu-latest
+    env:
+      MODEL: ${{ inputs.model || 'text_classification' }}
+      START: ${{ github.event_name == 'push' || inputs.start }}
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      SAGEMAKER_ROLE_ARN: ${{ vars.SAGEMAKER_ROLE_ARN }}
+      SAGEMAKER_BUCKET: ${{ vars.SAGEMAKER_BUCKET }}
+      MLFLOW_TRACKING_URI: ${{ vars.MLFLOW_TRACKING_URI }}
+      MLFLOW_SECRET_ARN: ${{ vars.MLFLOW_SECRET_ARN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.BUILD_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+      - uses: aws-actions/amazon-ecr-login@v2
+      - name: Build and push the training image
+        env:
+          REPOSITORY: ${{ vars.TRAIN_IMAGE_REPOSITORY }}
+        run: |
+          image="$REPOSITORY:$GITHUB_SHA"
+          docker build --platform linux/amd64 -f ops/train/Dockerfile -t "$image" .
+          docker push "$image"
+          echo "SAGEMAKER_IMAGE_URI=$image" >> "$GITHUB_ENV"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e . boto3 pyyaml python-box ensure joblib
+      - run: python main.py --model "$MODEL" pipeline upsert
+      - if: env.START == 'true'
+        run: python main.py --model "$MODEL" pipeline start

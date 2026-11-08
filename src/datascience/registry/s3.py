@@ -14,8 +14,8 @@ Two symmetric halves, one S3 layout:
     version="latest" resolves through latest.json. This is why the image is model-agnostic
     and swapping model version is an env/config change, not a rebuild.
 
-Registered under _REMOTE_BACKENDS["s3"] in registry.base; serve/local.py builds one directly
-from serving.yaml to pull.
+Registered under _REMOTE_BACKENDS["s3"] in registry.base; the serving shell builds one directly
+from serving.yaml to pull (model_source: registry).
 """
 
 import json

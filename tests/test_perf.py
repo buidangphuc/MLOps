@@ -473,11 +473,11 @@ def test_apply_dtype_casts_and_load_trained_uses_it():
 
 
 def test_perf_entry_resolves(tmp_artifacts, monkeypatch):
-    from datascience.infer import perf_entry
+    from packs.text_classification import perf_entry
     from datascience.perf.runner import Unsupported, resolve_entry
 
     ev = type("Ev", (), {"text_field": "text", "label_field": "label"})()
-    monkeypatch.setattr(perf_entry.ConfigurationManager, "evaluation", lambda self: ev)
+    monkeypatch.setattr(perf_entry.C, "evaluation", lambda cm: ev)
     monkeypatch.setattr(perf_entry.ConfigurationManager, "__init__", lambda self, *a, **k: None)
 
     def write(path, rows):
@@ -501,7 +501,7 @@ def test_perf_entry_resolves(tmp_artifacts, monkeypatch):
     monkeypatch.setattr(perf_entry, "Predictor", FakePredictor)
     monkeypatch.setattr(perf_entry, "VAL_SLICE", 2)
 
-    t = resolve_entry("datascience.infer.perf_entry:target")
+    t = resolve_entry("packs.text_classification.perf_entry:target")
     assert t.lengths == ["short", "long"]
     assert t.inputs("short", 2) == ["tiny", "mid text"]
     assert t.inputs("long", 4)[0] == "the longest text of them all" and len(t.inputs("long", 4)) == 4

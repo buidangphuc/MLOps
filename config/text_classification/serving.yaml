@@ -1,0 +1,10 @@
+triton:
+  bundle_deps: true
+
+sagemaker:
+  region: ap-southeast-1
+  models:
+    - name: topic-classifier
+      runtime_image: pytorch-inference:2.6-cpu-py312
+  release:
+    build_store: null

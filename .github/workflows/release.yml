@@ -1,0 +1,46 @@
+name: release
+
+on:
+  workflow_dispatch:
+    inputs:
+      model:
+        description: model id (config/<id>/)
+        default: text_classification
+      registry_version:
+        description: MLflow alias or version to release
+        default: champion
+      version:
+        description: release version (names the tars, immutable)
+        required: true
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      MODEL: ${{ inputs.model }}
+      REGISTRY_VERSION: ${{ inputs.registry_version }}
+      VERSION: ${{ inputs.version }}
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      RELEASE_BUILD_STORE: ${{ vars.RELEASE_BUILD_STORE }}
+      MLFLOW_TRACKING_URI: ${{ vars.MLFLOW_TRACKING_URI }}
+      MLFLOW_TRACKING_USERNAME: ${{ secrets.MLFLOW_TRACKING_USERNAME }}
+      MLFLOW_TRACKING_PASSWORD: ${{ secrets.MLFLOW_TRACKING_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install torch --index-url https://download.pytorch.org/whl/cpu
+      - run: pip install -e ".[dev,cpu]"
+      - run: python main.py --model "$MODEL" pull --version "$REGISTRY_VERSION"
+      - run: python main.py --model "$MODEL" package --version "$VERSION"
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.BUILD_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+      - run: python main.py --model "$MODEL" release --version "$VERSION"

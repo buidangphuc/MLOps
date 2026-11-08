@@ -1,0 +1,6 @@
+fastapi
+uvicorn
+pydantic-settings
+prometheus-client
+loguru
+mlflow-skinny

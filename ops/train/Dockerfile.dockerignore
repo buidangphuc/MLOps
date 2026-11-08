@@ -1,0 +1,10 @@
+*
+!pyproject.toml
+!requirements.txt
+!README.md
+!main.py
+!src/
+!packs/
+!config/
+**/__pycache__
+**/*.pyc

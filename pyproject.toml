@@ -20,6 +20,8 @@ dependencies = [
   "fastapi",
   "uvicorn",
   "prometheus-client",
+  "pydantic-settings",
+  "mlflow-skinny",
   "numpy",
   "loguru",
 ]
@@ -60,10 +62,7 @@ dev = [
   "pre-commit",            # runs the detect-secrets hook
   "detect-secrets",
   # GPU / cloud ops (run on the GPU box / AWS)
-  "tritonclient[http]",    # perf_analyzer client
-  "triton-model-analyzer", # `analyze` config sweep
   "boto3",
-  "sagemaker",
   "pynvml",
 ]
 
@@ -71,4 +70,4 @@ dev = [
 datascience = "datascience.cli:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/datascience"]
+packages = ["src/datascience", "packs"]

@@ -5,18 +5,20 @@ Offline: a tiny Qwen2 built from a config plus a word-level tokenizer, no downlo
 
 import dataclasses
 import json
+import tarfile
 
 import numpy as np
 import pytest
 import torch
 import yaml
 
-from datascience.components.model_evaluation import ModelEvaluation
-from datascience.components.model_trainer import ModelTrainer, training_kwargs
+from packs.text_classification.evaluate import ModelEvaluation
+from packs.text_classification.train import ModelTrainer, training_kwargs
 from datascience.config.configuration import ConfigurationManager
+from packs.text_classification import config as C
 from datascience.constants import paths
-from datascience.infer.scoring import IGNORE, build_prompt, encode_example, pad_batch, score_labels
-from datascience.model import bf16_ok, build_for_training, load_trained, merge_adapters, save_pretrained_atomic
+from packs.text_classification.scoring import IGNORE, build_prompt, encode_example, pad_batch, score_labels
+from packs.text_classification.model import bf16_ok, build_for_training, load_trained, merge_adapters, save_pretrained_atomic
 from datascience.perf import store
 from datascience.perf.hw import HardwareMismatch
 from datascience.perf.runner import Unsupported
@@ -70,7 +72,7 @@ def cm(no_dirs):
 
 
 def _trainer_cfg(cm, base_model, method="full", **over):
-    cfg = cm.trainer()
+    cfg = C.trainer(cm)
     return dataclasses.replace(cfg, base_model=str(base_model),
                                finetune=dataclasses.replace(cfg.finetune, method=method), **over)
 
@@ -78,12 +80,12 @@ def _trainer_cfg(cm, base_model, method="full", **over):
 # --- config ---------------------------------------------------------------------------
 
 def test_shipped_params_loads(cm):
-    assert cm.ingestion().dataset_name == "fancyzhx/ag_news"
-    assert cm.validation().label_field == "label"
-    assert cm.transformation().val_size > 0
-    t = cm.trainer()
+    assert C.ingestion(cm).dataset_name == "fancyzhx/ag_news"
+    assert C.validation(cm).label_field == "label"
+    assert C.transformation(cm).val_size > 0
+    t = C.trainer(cm)
     assert t.finetune.method == "full" and not t.apply_tuned
-    ev = cm.evaluation()
+    ev = C.evaluation(cm)
     assert ev.objective in ev.compute
     assert cm.gate().rules and cm.registry().name
 
@@ -101,7 +103,7 @@ def test_unknown_finetune_method_rejected(no_dirs, tmp_path):
 
 def test_prompt_tokens_are_ignored_by_the_loss(tiny, cm):
     _, tok = tiny
-    task = cm.task()
+    task = C.task(cm)
     ex = encode_example(tok, task, "stocks rally", "Business", LABELS)
     n_prompt = len(tok(build_prompt(tok, task, "stocks rally", LABELS), add_special_tokens=False)["input_ids"])
     ids, labels = ex["input_ids"], ex["labels"]
@@ -118,7 +120,7 @@ def test_prompt_tokens_are_ignored_by_the_loss(tiny, cm):
 
 def test_text_is_trimmed_to_max_length(tiny, cm):
     _, tok = tiny
-    ex = encode_example(tok, cm.task(), "stocks rally " * 50, "Sports", LABELS, max_length=40)
+    ex = encode_example(tok, C.task(cm), "stocks rally " * 50, "Sports", LABELS, max_length=40)
     assert len(ex["input_ids"]) <= 40 and ex["labels"][-1] == tok.eos_token_id
 
 
@@ -140,14 +142,14 @@ class Rigged(torch.nn.Module):
 def test_highest_likelihood_label_wins(tiny, cm):
     _, tok = tiny
     b = tok("Sports", add_special_tokens=False)["input_ids"][0]
-    scores = score_labels(Rigged(b), tok, cm.task(), ["stocks rally", "team wins", "match"], LABELS, batch_size=4)
+    scores = score_labels(Rigged(b), tok, C.task(cm), ["stocks rally", "team wins", "match"], LABELS, batch_size=4)
     assert scores.shape == (3, len(LABELS))
     assert (scores.argmax(axis=1) == LABELS.index("Sports")).all()
 
 
 def test_scoring_a_real_model_gives_one_finite_score_per_label(tiny, cm):
     model, tok = tiny
-    scores = score_labels(model, tok, cm.task(), ["stocks rally", "team wins"], LABELS, max_length=64)
+    scores = score_labels(model, tok, C.task(cm), ["stocks rally", "team wins"], LABELS, max_length=64)
     assert scores.shape == (2, 4) and np.isfinite(scores).all() and (scores <= 0).all()
 
 
@@ -155,10 +157,10 @@ def test_scoring_matches_one_example_at_a_time(tiny, cm):
     """Batched left-padded scoring on the last positions == unpadded full-sequence scoring."""
     model, tok = tiny
     texts = ["stocks rally on strong earnings today", "team wins"]
-    batched = score_labels(model, tok, cm.task(), texts, LABELS, max_length=64, batch_size=8)
+    batched = score_labels(model, tok, C.task(cm), texts, LABELS, max_length=64, batch_size=8)
     for i, t in enumerate(texts):
         for j, lb in enumerate(LABELS):
-            ex = pad_batch([encode_example(tok, cm.task(), t, lb, LABELS, 64)], tok.pad_token_id)
+            ex = pad_batch([encode_example(tok, C.task(cm), t, lb, LABELS, 64)], tok.pad_token_id)
             with torch.no_grad():
                 logp = torch.log_softmax(model(input_ids=ex["input_ids"]).logits[:, :-1].float(), -1)
             target = ex["labels"][:, 1:]
@@ -199,7 +201,7 @@ def test_qat_scheme_the_serving_gpu_cannot_run_stops_before_any_step(tmp_artifac
     def boom(*a, **k):
         raise AssertionError("a model was built")
 
-    monkeypatch.setattr("datascience.components.model_trainer.build_for_training", boom)
+    monkeypatch.setattr("packs.text_classification.train.build_for_training", boom)
     t4 = {"gpu_name": "T4", "compute_capability": "7.5", "gpu_count": 1, "min_vram_gb": 14}
     monkeypatch.setattr("datascience.perf.hw.load_targets", lambda: {"train": t4, "infer": t4})
     cfg = _trainer_cfg(cm, tiny_dir, "qat")
@@ -223,7 +225,7 @@ def test_qat_scheme_must_be_qat_capable(tmp_artifacts, tiny_dir, cm, tmp_path):
 
 
 def test_unwrap_fake_quant_leaves_plain_linears():
-    from datascience.model import unwrap_fake_quant
+    from packs.text_classification.model import unwrap_fake_quant
 
     class FakeQuantizedLinear(torch.nn.Linear):
         pass
@@ -298,10 +300,10 @@ def test_metrics_file_keeps_gate_keys_and_ignores_labels_absent_from_train(tmp_a
     labels = LABELS[:3]
     paths.LABEL_MAP.write_text(json.dumps({"label2id": {lb: i for i, lb in enumerate(labels)},
                                            "id2label": {str(i): lb for i, lb in enumerate(labels)}}))
-    monkeypatch.setattr("datascience.components.model_evaluation.load_trained", lambda *a, **k: (model, tok))
-    monkeypatch.setattr("datascience.components.model_evaluation.pick_device", lambda: "cpu")
+    monkeypatch.setattr("packs.text_classification.evaluate.load_trained", lambda *a, **k: (model, tok))
+    monkeypatch.setattr("packs.text_classification.evaluate.pick_device", lambda: "cpu")
 
-    ev = cm.evaluation()
+    ev = C.evaluation(cm)
     ModelEvaluation(ev)._run()
 
     result = json.loads(paths.METRICS_FILE.read_text())
@@ -340,3 +342,34 @@ def test_result_tuned_on_another_gpu_stops_training(tmp_artifacts, cm, tiny_dir)
 def test_bf16_needs_cuda(monkeypatch):
     monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
     assert bf16_ok() is False
+
+
+def test_dlc_target_serves_the_trained_model_and_passes_smoke(tiny_dir, cm, tmp_path, monkeypatch):
+    import shutil
+    from types import SimpleNamespace
+
+    from box import ConfigBox
+
+    from datascience.package import _pytorch_dlc
+    from packs.text_classification import pack as tc
+    from packs.text_classification.serving import META_FILE, ServingModel, serving_meta
+
+    model_dir = tmp_path / "model"
+    shutil.copytree(tiny_dir, model_dir)
+    (model_dir / META_FILE).write_text(json.dumps(serving_meta(LABELS, C.task(cm), 64, temperature=2.0)))
+    monkeypatch.setattr(paths, "TRITON_REPO", tmp_path / "repo")
+    monkeypatch.setattr(paths, "MME_TARS", tmp_path / "tars")
+    (tmp_path / "tars").mkdir()
+    fake_cm = SimpleNamespace(serving=lambda: ConfigBox({"sagemaker": {"models": [{"name": "clf"}]}}))
+
+    pred = ServingModel(model_dir).predict("stocks rally")
+    assert pred["label"] in LABELS and 0 < pred["score"] <= 1
+
+    (target,) = tc.targets(fake_cm, SimpleNamespace(MODEL_DIR=model_dir), "v7")
+    root = _pytorch_dlc(target, "clf-v7", bundle=False)
+    got = tc.smoke(root, target, fake_cm)
+
+    assert got["model_version"] == "v7" and len(got["predictions"]) == len(tc.SMOKE_TEXTS)
+    with tarfile.open(tmp_path / "tars" / "clf-v7.tar.gz") as tar:
+        names = tar.getnames()
+    assert {"code/inference.py", "code/serving.py", "code/scoring.py", "model_meta.json", META_FILE} <= set(names)
