@@ -62,9 +62,7 @@ dev = [
   "pre-commit",            # runs the detect-secrets hook
   "detect-secrets",
   # GPU / cloud ops (run on the GPU box / AWS)
-  "tritonclient[http]",    # perf_analyzer client
   "boto3",
-  "sagemaker",
   "pynvml",
 ]
 

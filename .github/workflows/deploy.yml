@@ -1,0 +1,59 @@
+name: deploy
+
+on:
+  pull_request:
+    paths:
+      - "deploy/**"
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e . --no-deps && pip install pyyaml loguru
+      - id: plan
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          matrix=$(python -m datascience.serve.deploy plan --base "$BASE_SHA")
+          echo "$matrix"
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+
+  sync:
+    needs: plan
+    if: needs.plan.outputs.matrix != '[]'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    environment: ${{ matrix.env }}
+    name: ${{ matrix.model }} ${{ matrix.env }} ${{ matrix.target }}-${{ matrix.version }}
+    env:
+      MODEL: ${{ matrix.model }}
+      ENV_NAME: ${{ matrix.env }}
+      TARGET: ${{ matrix.target }}
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      RELEASE_BUILD_STORE: ${{ vars.RELEASE_BUILD_STORE }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e . --no-deps && pip install pyyaml loguru boto3
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+      - run: python -m datascience.serve.deploy sync "$MODEL" "$ENV_NAME" "$TARGET"

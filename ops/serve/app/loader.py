@@ -25,7 +25,7 @@ def _mlflow_pull(s: Settings) -> str:
     version = s.MODEL_VERSION
     if not version.isdigit():
         client = MlflowClient(tracking_uri=s.MLFLOW_TRACKING_URI, registry_uri=s.MLFLOW_TRACKING_URI)
-        version = client.get_model_version_by_alias(s.MODEL_NAME, version).version
+        version = str(client.get_model_version_by_alias(s.MODEL_NAME, version).version)
 
     dest = Path(s.REGISTRY_CACHE) / s.MODEL_NAME / version
     if dest.is_dir() and any(dest.iterdir()):

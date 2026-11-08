@@ -80,6 +80,8 @@ def build_parser(stage_names=(), commands=None) -> argparse.ArgumentParser:
     pk.add_argument("--version", help=version_help)
     rl = sub.add_parser("release", help="upload the packaged tars + manifest.json to the S3 build store")
     rl.add_argument("--version", help=version_help)
+    pu = sub.add_parser("pull", help="download a registered model (MLflow alias or version) into the model dir")
+    pu.add_argument("--version", default=None, help="alias or version number (default: registry.remote.mlflow.alias)")
     sv = sub.add_parser("serve", help="run the FastAPI serving shell (ops/serve) on the trained model")
     sv.add_argument("--port", type=int, default=8080)
     sub.add_parser("serve-triton", help="run the packaged Triton repo locally (docker compose)")
@@ -171,6 +173,18 @@ def main(argv=None):
         from datascience.serve.release import release
 
         release(args.version)
+    elif cmd == "pull":
+        import shutil
+
+        from datascience.config.configuration import ConfigurationManager
+        from datascience.registry.mlflow_registry import from_config
+
+        reg = from_config(ConfigurationManager().registry())
+        src = reg.pull(args.version or reg.alias, paths.REGISTRY_CACHE)
+        if paths.MODEL_DIR.exists():
+            shutil.rmtree(paths.MODEL_DIR)
+        shutil.copytree(src, paths.MODEL_DIR)
+        print(paths.MODEL_DIR)
     elif cmd == "serve":
         import subprocess
 

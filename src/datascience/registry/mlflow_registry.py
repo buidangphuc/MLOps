@@ -60,7 +60,7 @@ class MLflowRegistry:
         version = str(version or self.alias)
         if version.isdigit():
             return version
-        return self._client().get_model_version_by_alias(self.name, version).version
+        return str(self._client().get_model_version_by_alias(self.name, version).version)
 
     def pull(self, version: str, dest) -> str:
         import mlflow.artifacts
