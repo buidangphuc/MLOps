@@ -67,17 +67,18 @@ class MLflowRegistry:
 
         version = self.resolve_version(version)
         dest = os.path.join(str(dest), self.name, version)
-        if os.path.isdir(dest) and os.listdir(dest):
-            log.info(f"[mlflow registry] {self.name} v{version} already cached at {dest}")
-            return dest
+        cached = os.path.join(dest, ARTIFACT_PATH)
+        if os.path.isdir(cached) and os.listdir(cached):
+            log.info(f"[mlflow registry] {self.name} v{version} already cached at {cached}")
+            return cached
 
         os.makedirs(dest, exist_ok=True)
-        mlflow.artifacts.download_artifacts(
-            artifact_uri=f"models:/{self.name}/{version}", dst_path=dest,
+        path = mlflow.artifacts.download_artifacts(
+            artifact_uri=self._client().get_model_version_download_uri(self.name, version), dst_path=dest,
             tracking_uri=self.tracking_uri,
         )
-        log.info(f"[mlflow registry] pulled {self.name} v{version} -> {dest}")
-        return dest
+        log.info(f"[mlflow registry] pulled {self.name} v{version} -> {path}")
+        return path
 
 
 def from_config(cfg) -> MLflowRegistry:

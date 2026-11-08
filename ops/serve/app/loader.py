@@ -22,20 +22,21 @@ def _mlflow_pull(s: Settings) -> str:
     import mlflow.artifacts
     from mlflow import MlflowClient
 
+    client = MlflowClient(tracking_uri=s.MLFLOW_TRACKING_URI, registry_uri=s.MLFLOW_TRACKING_URI)
     version = s.MODEL_VERSION
     if not version.isdigit():
-        client = MlflowClient(tracking_uri=s.MLFLOW_TRACKING_URI, registry_uri=s.MLFLOW_TRACKING_URI)
         version = str(client.get_model_version_by_alias(s.MODEL_NAME, version).version)
 
     dest = Path(s.REGISTRY_CACHE) / s.MODEL_NAME / version
-    if dest.is_dir() and any(dest.iterdir()):
-        logger.info(f"registry: {s.MODEL_NAME} v{version} already cached at {dest}")
-        return str(dest)
+    cached = dest / "model"
+    if cached.is_dir() and any(cached.iterdir()):
+        logger.info(f"registry: {s.MODEL_NAME} v{version} already cached at {cached}")
+        return str(cached)
 
     dest.mkdir(parents=True, exist_ok=True)
-    mlflow.artifacts.download_artifacts(
-        artifact_uri=f"models:/{s.MODEL_NAME}/{version}", dst_path=str(dest),
+    path = mlflow.artifacts.download_artifacts(
+        artifact_uri=client.get_model_version_download_uri(s.MODEL_NAME, version), dst_path=str(dest),
         tracking_uri=s.MLFLOW_TRACKING_URI,
     )
-    logger.info(f"registry: pulled {s.MODEL_NAME} v{version} -> {dest}")
-    return str(dest)
+    logger.info(f"registry: pulled {s.MODEL_NAME} v{version} -> {path}")
+    return path
