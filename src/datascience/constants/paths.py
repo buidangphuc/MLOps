@@ -60,9 +60,6 @@ class ModelPaths:
     TUNE_DIR: Path = field(init=False)
     TUNE_RESULTS: Path = field(init=False)
     DAPT_DIR: Path = field(init=False)
-    OPTIMIZED_DIR: Path = field(init=False)
-    PARITY_FILE: Path = field(init=False)
-    BUNDLE_DIR: Path = field(init=False)
     TRITON_REPO: Path = field(init=False)
     MME_TARS: Path = field(init=False)
 
@@ -74,7 +71,6 @@ class ModelPaths:
         model = trainer / "model"
         ev = art / "model_evaluation"
         tune = art / "tune_runs"
-        opt = art / "optimized"
         values = {
             "CONFIG_DIR": cfg,
             "PARAMS_FILE": cfg / "params.yaml",
@@ -107,9 +103,6 @@ class ModelPaths:
             "TUNE_DIR": tune,
             "TUNE_RESULTS": tune / "results.json",
             "DAPT_DIR": art / "dapt",
-            "OPTIMIZED_DIR": opt,
-            "PARITY_FILE": opt / "parity.json",
-            "BUNDLE_DIR": art / "bundle",
             "TRITON_REPO": art / "model_repository",
             "MME_TARS": art / "mme_tars",
         }
@@ -118,7 +111,7 @@ class ModelPaths:
 
     def ensure_dirs(self) -> None:
         for d in (self.DATA_DIR, self.VALID_DIR, self.SPLIT_DIR, self.TRAINER_DIR, self.CKPT_DIR,
-                  self.EVAL_DIR, self.REGISTRY_DIR, LOG_DIR, self.TUNE_DIR, self.OPTIMIZED_DIR, self.BUNDLE_DIR):
+                  self.EVAL_DIR, self.REGISTRY_DIR, LOG_DIR, self.TUNE_DIR):
             d.mkdir(parents=True, exist_ok=True)
 
 

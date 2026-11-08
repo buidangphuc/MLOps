@@ -20,6 +20,8 @@ dependencies = [
   "fastapi",
   "uvicorn",
   "prometheus-client",
+  "pydantic-settings",
+  "mlflow-skinny",
   "numpy",
   "loguru",
 ]
@@ -61,7 +63,6 @@ dev = [
   "detect-secrets",
   # GPU / cloud ops (run on the GPU box / AWS)
   "tritonclient[http]",    # perf_analyzer client
-  "triton-model-analyzer", # `analyze` config sweep
   "boto3",
   "sagemaker",
   "pynvml",

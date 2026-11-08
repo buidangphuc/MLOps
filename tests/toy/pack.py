@@ -1,6 +1,7 @@
 """A dependency-free pack used by the platform tests (no torch, no downloads)."""
 
 import json
+from pathlib import Path
 
 from pydantic import BaseModel
 
@@ -80,7 +81,7 @@ class Request(BaseModel):
 
 
 def load(model_dir, settings):
-    return json.loads((model_dir / "weights.json").read_text())
+    return json.loads((Path(model_dir) / "weights.json").read_text())
 
 
 def respond(model, req: Request) -> dict:

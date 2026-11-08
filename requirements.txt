@@ -5,5 +5,7 @@ transformers         # AutoTokenizer at serve time (no torch needed for tokeniza
 fastapi
 uvicorn
 prometheus-client
+pydantic-settings
+mlflow-skinny
 numpy
 loguru

@@ -5,6 +5,7 @@ Offline: a tiny Qwen2 built from a config plus a word-level tokenizer, no downlo
 
 import dataclasses
 import json
+import tarfile
 
 import numpy as np
 import pytest
@@ -341,3 +342,34 @@ def test_result_tuned_on_another_gpu_stops_training(tmp_artifacts, cm, tiny_dir)
 def test_bf16_needs_cuda(monkeypatch):
     monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
     assert bf16_ok() is False
+
+
+def test_dlc_target_serves_the_trained_model_and_passes_smoke(tiny_dir, cm, tmp_path, monkeypatch):
+    import shutil
+    from types import SimpleNamespace
+
+    from box import ConfigBox
+
+    from datascience.package import _pytorch_dlc
+    from packs.text_classification import pack as tc
+    from packs.text_classification.serving import META_FILE, ServingModel, serving_meta
+
+    model_dir = tmp_path / "model"
+    shutil.copytree(tiny_dir, model_dir)
+    (model_dir / META_FILE).write_text(json.dumps(serving_meta(LABELS, C.task(cm), 64, temperature=2.0)))
+    monkeypatch.setattr(paths, "TRITON_REPO", tmp_path / "repo")
+    monkeypatch.setattr(paths, "MME_TARS", tmp_path / "tars")
+    (tmp_path / "tars").mkdir()
+    fake_cm = SimpleNamespace(serving=lambda: ConfigBox({"sagemaker": {"models": [{"name": "clf"}]}}))
+
+    pred = ServingModel(model_dir).predict("stocks rally")
+    assert pred["label"] in LABELS and 0 < pred["score"] <= 1
+
+    (target,) = tc.targets(fake_cm, SimpleNamespace(MODEL_DIR=model_dir), "v7")
+    root = _pytorch_dlc(target, "clf-v7", bundle=False)
+    got = tc.smoke(root, target, fake_cm)
+
+    assert got["model_version"] == "v7" and len(got["predictions"]) == len(tc.SMOKE_TEXTS)
+    with tarfile.open(tmp_path / "tars" / "clf-v7.tar.gz") as tar:
+        names = tar.getnames()
+    assert {"code/inference.py", "code/serving.py", "code/scoring.py", "model_meta.json", META_FILE} <= set(names)

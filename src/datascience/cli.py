@@ -8,6 +8,11 @@ the device, exit codes propagate (a failing gate exits non-zero).
   python main.py promote <variant>               # version the chosen variant into the registry
   python main.py infer --text "..."
   python main.py infer --input-file in.jsonl --output-file out.jsonl --batch-size 32
+  python main.py serve [--port 8080]             # the FastAPI shell (ops/serve) on the trained model
+
+Artifacts (run by CI, see .github/workflows/release.yml):
+  python main.py package --version v20260815     # the pack's targets -> versioned tars + smoke
+  python main.py release --version v20260815     # -> S3 build store + manifest.json
 """
 
 import argparse
@@ -65,6 +70,13 @@ def build_parser(stage_names=(), commands=None) -> argparse.ArgumentParser:
     ip.add_argument("--batch-size", type=int, default=32)
     ip.add_argument("--model-path", help="a specific model dir (default: the trained model)")
 
+    version_help = "release version — names the tar + the S3 key (default: RELEASE_VERSION env, else the data fingerprint)"
+    pk = sub.add_parser("package", help="build the pack's deployable targets (versioned tars) and smoke them")
+    pk.add_argument("--version", help=version_help)
+    rl = sub.add_parser("release", help="upload the packaged tars + manifest.json to the S3 build store")
+    rl.add_argument("--version", help=version_help)
+    sv = sub.add_parser("serve", help="run the FastAPI serving shell (ops/serve) on the trained model")
+    sv.add_argument("--port", type=int, default=8080)
     sub.add_parser("serve-triton", help="run the packaged Triton repo locally (docker compose)")
     ps = sub.add_parser("promote-stage", help="point staging/production at a registered version")
     ps.add_argument("name", help="registry model name (registry.name in params.yaml)")
@@ -140,6 +152,21 @@ def main(argv=None):
             predictor.predict_file(args.input_file, args.output_file or "predictions.jsonl", args.batch_size)
         else:
             raise SystemExit("infer needs --text or --input-file")
+    elif cmd == "package":
+        from datascience.package import package
+
+        package(args.version)
+    elif cmd == "release":
+        from datascience.serve.release import release
+
+        release(args.version)
+    elif cmd == "serve":
+        import subprocess
+
+        env = {**os.environ, "DS_PACK": pack.name(), "MODEL_SOURCE": "local", "MODEL_DIR": str(paths.MODEL_DIR),
+               "PORT": str(args.port), "PYTHONPATH": os.pathsep.join([str(paths.PROJECT_ROOT / "ops" / "serve"),
+                                                                     str(paths.PROJECT_ROOT)])}
+        subprocess.run([sys.executable, "-m", "app.main"], env=env, check=True)
     elif cmd == "serve-triton":
         from datascience.serve.triton import serve_triton
 
