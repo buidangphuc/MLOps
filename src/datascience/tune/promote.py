@@ -33,7 +33,7 @@ def promote(variant: str):
     metrics = json.loads((run_dir / "metrics.json").read_text())
     config = yaml.safe_load((run_dir / "config.yaml").read_text())
 
-    cm = ConfigurationManager()  # base config -> registry name + gate rules
+    cm = ConfigurationManager(params_filepath=run_dir / "config.yaml")
     if not QualityGate(cm.gate()).check(metrics):  # raises GateFailed if on_fail=error
         return
 
@@ -43,7 +43,8 @@ def promote(variant: str):
         "run_id": entry.get("run_id"),
         "experiment": results.get("experiment"),
         "base_model": config["model"]["base_model"],
-        "data_version": read_data_version(),
+        "data_version": json.loads((run_dir / "data_version.json").read_text())
+        if (run_dir / "data_version.json").exists() else read_data_version(),
         "config": config,  # full hyperparam snapshot -> lineage
     }
     result = registry.register(run_dir / "model", scalar, metadata, cm.registry())

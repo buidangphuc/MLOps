@@ -221,7 +221,7 @@ def package_triton():
 
 
 def _labels() -> list:
-    from datascience.model import load_labels
+    from packs.text_classification.model import load_labels
 
     return load_labels(paths.LABEL_MAP)
 

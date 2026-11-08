@@ -3,10 +3,10 @@ import os
 
 from datascience import log
 from datascience.constants import paths
-from datascience.entity.config_entity import ModelTrainerConfig
-from datascience.infer.scoring import encode_example, pad_batch
+from packs.text_classification.config import ModelTrainerConfig
+from packs.text_classification.scoring import encode_example, pad_batch
 from datascience.perf.runner import peak_mem_gb, reset_peak_mem
-from datascience.model import (
+from packs.text_classification.model import (
     QUANT_SCHEME_FILE, bf16_ok, build_for_training, check_qat_scheme, load_label_map, merge_adapters, qat_prepare,
     save_pretrained_atomic, unwrap_fake_quant,
 )
@@ -227,3 +227,10 @@ class ModelTrainer:
         atomic_write_json(paths.TRAIN_STATS, {"samples_per_s": out.metrics.get("train_samples_per_second"),
                                               "runtime_s": out.metrics.get("train_runtime"),
                                               "peak_mem_gb": peak_mem_gb()})
+        paths.TRAIN_RUN_FILE.unlink(missing_ok=True)
+        if cfg.tracking_backend == "mlflow":
+            import mlflow
+
+            run = mlflow.last_active_run()
+            if run:
+                atomic_write_json(paths.TRAIN_RUN_FILE, {"run_id": run.info.run_id})

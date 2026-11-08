@@ -71,4 +71,4 @@ dev = [
 datascience = "datascience.cli:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/datascience"]
+packages = ["src/datascience", "packs"]

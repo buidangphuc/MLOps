@@ -10,14 +10,15 @@ from pathlib import Path
 
 from datascience import log
 from datascience.config.configuration import ConfigurationManager
+from packs.text_classification import config as C
 from datascience.constants import paths
-from datascience.entity.config_entity import DaptConfig
-from datascience.model import bf16_ok, save_pretrained_atomic
+from packs.text_classification.config import DaptConfig
+from packs.text_classification.model import bf16_ok, save_pretrained_atomic
 from datascience.utils.io import read_jsonl
 
 
 def run_dapt(cfg: DaptConfig = None):
-    cfg = cfg or ConfigurationManager().dapt()
+    cfg = cfg or C.dapt(ConfigurationManager())
     if not cfg.corpus:
         raise SystemExit("set dapt.corpus (a JSONL with a `text` field) before running dapt")
 

@@ -2,7 +2,7 @@ from collections import Counter
 
 from datascience import log
 from datascience.constants import paths
-from datascience.entity.config_entity import DataValidationConfig
+from packs.text_classification.config import DataValidationConfig
 from datascience.utils.io import atomic_write_text, read_jsonl
 
 

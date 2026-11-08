@@ -12,17 +12,18 @@ from pathlib import Path
 
 from datascience import log
 from datascience.config.configuration import ConfigurationManager
+from packs.text_classification import config as C
 from datascience.constants import paths
-from datascience.infer.scoring import score_labels
-from datascience.metrics import softmax
-from datascience.model import load_label_map, load_trained
+from packs.text_classification.scoring import score_labels
+from packs.text_classification.metrics import softmax
+from packs.text_classification.model import load_label_map, load_trained
 from datascience.utils.runtime import pick_device
 
 
 class Predictor:
 
     def __init__(self, model_dir=None, device=None, scheme=None, max_length=None):
-        ev = ConfigurationManager().evaluation()
+        ev = C.evaluation(ConfigurationManager())
         self.text_field = ev.text_field
         self.task = ev.task
         self.max_length = max_length or ev.max_length

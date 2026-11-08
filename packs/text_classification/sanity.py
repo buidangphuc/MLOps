@@ -6,9 +6,9 @@ can't, something is wrong (bad labels, frozen weights, a prompt that masks the w
 
 from datascience import log
 from datascience.constants import paths
-from datascience.entity.config_entity import ModelTrainerConfig
-from datascience.infer.scoring import encode_example, pad_batch
-from datascience.model import build_for_training, load_label_map
+from packs.text_classification.config import ModelTrainerConfig
+from packs.text_classification.scoring import encode_example, pad_batch
+from packs.text_classification.model import build_for_training, load_label_map
 from datascience.utils.io import read_jsonl
 from datascience.utils.runtime import pick_device, set_seed
 

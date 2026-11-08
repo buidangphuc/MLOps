@@ -1,8 +1,8 @@
 """Perf entries backed by the pipeline's own predictor and trainer (kept out of `perf/`, which
 stays free of pipeline imports):
 
-    datascience perf tune infer --entry datascience.infer.perf_entry:target
-    datascience perf tune train --entry datascience.infer.perf_entry:train_target
+    datascience perf tune infer --entry packs.text_classification.perf_entry:target
+    datascience perf tune train --entry packs.text_classification.perf_entry:train_target
 
 Traffic is the TEST split (shortest / longest texts); quality is macro-F1 on a fixed VAL slice.
 """
@@ -10,9 +10,10 @@ Traffic is the TEST split (shortest / longest texts); quality is macro-F1 on a f
 from itertools import cycle, islice
 
 from datascience.config.configuration import ConfigurationManager
+from packs.text_classification import config as C
 from datascience.constants import paths
-from datascience.infer.predict import Predictor
-from datascience.metrics import compute_scalar_metrics
+from packs.text_classification.predict import Predictor
+from packs.text_classification.metrics import compute_scalar_metrics
 from datascience.perf.runner import Unsupported
 from datascience.utils.io import read_jsonl
 
@@ -24,7 +25,7 @@ class InferTarget:
     lengths = ["short", "long"]
 
     def __init__(self):
-        ev = ConfigurationManager().evaluation()
+        ev = C.evaluation(ConfigurationManager())
         self.text_field, self.label_field = ev.text_field, ev.label_field
         self._by_len = None
 
@@ -53,9 +54,9 @@ class TrainTarget:
     """Sweeps run in a scratch dir with no tracking: never touch the real checkpoints or resume."""
 
     def __init__(self):
-        from datascience.components.model_trainer import ModelTrainer
+        from packs.text_classification.train import ModelTrainer
 
-        self.trainer = ModelTrainer(ConfigurationManager().trainer())
+        self.trainer = ModelTrainer(C.trainer(ConfigurationManager()))
 
     def build_trainer(self, overrides: dict):
         scratch = {"output_dir": str(paths.PERF_DIR / "train_scratch"), "report_to": []}

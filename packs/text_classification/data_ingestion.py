@@ -1,6 +1,6 @@
 from datascience import log
 from datascience.constants import paths
-from datascience.entity.config_entity import DataIngestionConfig
+from packs.text_classification.config import DataIngestionConfig
 from datascience.utils.io import write_jsonl
 from datascience.utils.runtime import retry
 

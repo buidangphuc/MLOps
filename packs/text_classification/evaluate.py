@@ -1,11 +1,11 @@
 import numpy as np
 
-from datascience import metrics as M
+from packs.text_classification import metrics as M
 from datascience import log
 from datascience.constants import paths
-from datascience.entity.config_entity import ModelEvaluationConfig
-from datascience.infer.scoring import score_labels
-from datascience.model import load_label_map, load_trained
+from packs.text_classification.config import ModelEvaluationConfig
+from packs.text_classification.scoring import score_labels
+from packs.text_classification.model import load_label_map, load_trained
 from datascience.utils.io import atomic_write_json, read_jsonl, write_jsonl
 from datascience.utils.runtime import pick_device, set_run_status
 

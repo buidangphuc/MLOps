@@ -4,7 +4,7 @@ from sklearn.model_selection import GroupShuffleSplit, train_test_split
 
 from datascience import log
 from datascience.constants import paths
-from datascience.entity.config_entity import DataTransformationConfig
+from packs.text_classification.config import DataTransformationConfig
 from datascience.utils.io import atomic_write_json, data_fingerprint, read_jsonl, write_jsonl
 
 
