@@ -76,7 +76,9 @@ tracking:
 registry:
   name: TopicLLM
   remote:
-    backend: none            # none | mlflow | sagemaker (remote not built yet)
+    backend: mlflow
+    mlflow:
+      alias: champion
 
 # Opt-in: apply the training-throughput config tuned for this box (`datascience perf tune train`).
 # A result tuned on a different GPU stops training with a hardware-mismatch error.

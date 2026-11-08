@@ -1,8 +1,8 @@
 """Model registry orchestration.
 
 The trained model is ALWAYS on disk. On top of that, a model that passes the gate is
-versioned in the LOCAL registry (always). A remote backend (mlflow / sagemaker) can
-ADDITIONALLY receive it — pluggable seam, not connected yet.
+versioned in the LOCAL registry (always). A remote backend (mlflow / s3) ADDITIONALLY
+receives it: mlflow registers a model version and points the approval alias at it.
 
 To connect a remote: write a class with `.push(model_dir, metrics, metadata) -> str`
 and register it in `_REMOTE_BACKENDS` below. Everything else stays the same.
@@ -21,9 +21,10 @@ class RemoteRegistry(Protocol):
 
 
 # Seam: backend name -> factory(cfg) -> RemoteRegistry.
+from datascience.registry.mlflow_registry import from_config as _mlflow_from_config
 from datascience.registry.s3 import from_config as _s3_from_config
 
-_REMOTE_BACKENDS = {"s3": _s3_from_config}  # e.g. add {"mlflow": ..., "sagemaker": ...}
+_REMOTE_BACKENDS = {"s3": _s3_from_config, "mlflow": _mlflow_from_config}
 
 
 def register(model_dir, metrics: dict, metadata: dict, cfg: RegistryConfig) -> dict:
