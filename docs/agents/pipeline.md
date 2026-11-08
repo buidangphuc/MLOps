@@ -5,74 +5,119 @@ Rules, invariants and the code map for this repo. When a convention changes, edi
 
 ## What this repo is
 
-Three layers share one package (`src/datascience`, imported as `datascience`):
+A multi-model MLOps platform. Generic code is one package (`src/datascience`, imported as
+`datascience`); each model is a **pack** in `packs/<pack>/`.
 
-1. **Fine-tuning pipeline**: ingest → validate → transform → train → evaluate → gate → registry, plus a tuning loop (`tune/`). It is a causal-LM SFT (Qwen2.5-0.5B-Instruct) with AG News posed as generation: the label is the completion, and prediction picks the label with the highest log-likelihood (`infer/scoring.py`, shared by train, eval, predict and the perf entry). The trainer and evaluator are **reference code you copy and edit** for a new task. They are not a config engine.
-2. **Serving and registry platform**:
-   - FastAPI CPU serve (`serve/local.py`)
-   - Triton python-backend MME (`package.py`)
-   - SageMaker deploy (`serve/deploy_sagemaker.py`)
-   - S3 registry with local versions (`registry/`)
-   - staging/production pointers with rollback (`registry/stages.py`)
-3. **GPU perf platform** (`perf/`): tuning for training throughput, inference, profiling and kernel autotuning. It is task-agnostic and **bound to hardware** (see the "Perf platform" section).
+1. **Platform** (`src/datascience`): per-model paths, the stage runner, gate, registry (local,
+   MLflow with an approval alias, S3, staging/production pointers), the tuning loop, package
+   writers, release, SageMaker jobs and pipelines, CI deploy, and the FastAPI serving shell
+   (`ops/serve`).
+2. **Packs** (`packs/`): one per model. The shipped example is `packs/text_classification`, a
+   causal-LM SFT (Qwen2.5-0.5B-Instruct) with AG News posed as generation: the label is the
+   completion, and prediction picks the label with the highest log-likelihood (`scoring.py`,
+   shared by train, eval, predict, serving and the perf entry). A pack's trainer and evaluator are
+   **reference code you copy and edit**. They are not a config engine.
+3. **GPU perf platform** (`perf/`): tuning for training throughput, inference, profiling and kernel
+   autotuning. It is task-agnostic and **bound to hardware** (see "Perf platform").
 
-**Known broken (serving and packaging only):** `serve/local.py`, `package.py`, `optimize.py` and `serve_analyzer` are still GLiNER-shaped. For example `Predictor(..., onnx=True)` and `ev.flat_ner` / `ev.max_width` no longer exist. Train, eval, infer, tune and perf work. Do not build on those four files before they are ported.
+## Model packs
+
+`--model <id>` (or env `DS_MODEL`, default `text_classification`) selects `config/<id>/` and
+`artifacts/<id>/`. `params.yaml` may set `pack: <pack>` so several model ids share one pack.
+
+A pack is a plain module `packs/<pack>/pack.py`, loaded by `datascience/pack.py`:
+
+| Name | Required | What the platform does with it |
+|---|---|---|
+| `STAGES = [(name, fn(cm, p, **kw))]` | yes | `run` / stage commands / `tune`; must contain `evaluate`, which writes `p.METRICS_FILE`. The runner gates and registers after `evaluate`. |
+| `METRICS` | yes | valid names for `metrics.compute`, `objective` and gate rules |
+| `validate_config(params)` | no | called by `ConfigurationManager` after the common checks |
+| `lineage(cm)` | no | extra registry tags |
+| `load_predictor(model_dir)` | no | `infer` |
+| `targets(cm, p, version) -> [Target]` | no | `package`. `Target.kind` picks the writer: `triton-python` (model-dir tar, optional bundled deps, Python 3.10 build) or `pytorch-dlc` (flat, deterministic tar). |
+| `smoke(target_dir, target, cm)` | no | run on every built target; raise on a miss |
+| `COMMANDS = {name: (help, fn)}` | no | extra one-off subcommands (`sanity`, `dapt`) |
+| `serving_app.py` (`Request`, `WARMUP`, `load`, `respond`) | no | the FastAPI shell (`ops/serve`, `--build-arg PACK=<pack>`) |
+
+Add a pack: `packs/<pack>/{__init__,pack}.py`, `config/<id>/params.yaml` (sections `model`,
+`metrics`, `gate`, `tracking`, `registry` plus the pack's own), `serving.yaml`
+(`sagemaker.models`, `release.build_store`), optionally `sagemaker.yaml`, `experiments.yaml` and
+`deploy/<id>/<env>.yaml`. Then `python main.py --model <id> run`. `tests/toy/pack.py` is the
+smallest working pack.
+
+## Lifecycle (what runs where)
+
+| Step | Where | Command / workflow |
+|---|---|---|
+| train, evaluate, gate, register | laptop or GPU box | `python main.py --model <id> run` |
+| the same on AWS | SageMaker Training Job | `train-remote` (one job, every stage) |
+| the same as a pipeline | SageMaker Pipeline, owned by CI | `.github/workflows/pipeline.yml` -> `pipeline upsert` + `start` |
+| approve | a human | point the MLflow alias (`registry.remote.mlflow.alias`, `champion`) at a version |
+| release | CI build role | `.github/workflows/release.yml`: `pull` -> `package` (smoke) -> `release` |
+| deploy | CI deploy role, per GitHub environment | a PR changing `deploy/<id>/<env>.yaml` -> `.github/workflows/deploy.yml` |
+| rollback | a human | revert the env file (the old key is still in the prefix), or move the alias back |
+
+Nothing deploys from a laptop. Endpoint creation (the long-lived MME, its IAM and autoscaling) is
+infra-as-code outside this repo. A SageMaker MME caches a model **by S3 key**, so every tar is
+`<target>-<version>.tar.gz`, a released version is immutable (`release` refuses to overwrite), and
+`deploy` never overwrites a key in the endpoint prefix.
 
 ## Where things live
 
-- `constants/paths.py`: every artifact path, `MLFLOW_URI`, and the config file paths. Paths are absolute and never hardcoded anywhere else.
-- `config/`, one file per concern:
-  - `params.yaml`: the experiment.
-  - `experiments.yaml`: tuning variants.
-  - `serving.yaml`: serving lifecycle.
-  - `hardware.yaml`: the train and infer GPU targets plus SageMaker instance types.
-  - `perf.yaml`: perf grids, objectives and constraints.
-- `components/` holds stage logic. `pipeline/stages.py` wires config to components. `cli.py` dispatches and imports the training stack only for stage commands.
-- `registry/`:
-  - `base.register`: local always, remote through `_REMOTE_BACKENDS` (`s3`), and records `train_hw`.
-  - `s3.py`: push (training side) and pull (serving side).
-  - `stages.py`: `promote-stage`, `rollback`, `stage-path`.
-- `perf/`:
-  - `hw.py`: fingerprint and role binding.
-  - `store.py`: hardware-bound results.
-  - `runner.py`: sweeps.
-  - `workloads/{infer,train,kernel}.py`
-  - `quant.py`: PTQ `SCHEMES` and `apply`.
-  - `report.py`: quant-vs-quality table.
-  - `profile.py`
-  - `kernels/`: copy-and-edit OpenAI-Triton kernels.
-  - `cli.py`: `datascience perf …`
-- `infer/`: `scoring.py` (label log-likelihood), `predict.py` (`Predictor`), `perf_entry.py` (real-model perf entries; kept out of `perf/`).
-- `tests/`: offline pure-logic tests. The `tmp_artifacts` fixture in `conftest.py` redirects artifact paths. Tests run without a GPU or a dataset.
+- `constants/paths.py`: `ModelPaths` (every per-model artifact and config path), shared
+  `HARDWARE_FILE`, `PERF_FILE`, `PERF_DIR`, `MLFLOW_URI`. Module attribute access (`paths.X`)
+  resolves against the active model. Paths are never hardcoded anywhere else.
+- `config/`: `hardware.yaml` and `perf.yaml` (shared), and per model `config/<id>/`:
+  `params.yaml` (the experiment), `experiments.yaml` (tuning variants), `serving.yaml` (targets,
+  build store), `sagemaker.yaml` (instances, prefix; account values come from env).
+- `pack.py` (loader + `Target`), `pipeline/stages.py` (runner + gate/register), `cli.py`
+  (pre-parses `--model`, builds stage commands from the pack), `config/configuration.py` (common
+  sections only).
+- `registry/`: `base.register` (local always, remote through `_REMOTE_BACKENDS`: `mlflow`, `s3`;
+  records `train_hw`), `mlflow_registry.py` (push with alias, pull), `s3.py`, `stages.py`.
+- `tune/`: `variants.py` (the one place a variant name resolves), `loop.py`, `promote.py`.
+- `package.py` (writers), `serve/release.py` (build store + manifest), `serve/deploy.py` (CI plan
+  and sync), `serve/triton.py` (local Triton compose).
+- `cloud/`: `steps.py` (`sm-step`, inside a job), `train_job.py`, `pipeline.py`, `config.py`.
+- `perf/`: `hw.py`, `store.py`, `runner.py`, `workloads/{infer,train,kernel}.py`, `quant.py`,
+  `report.py`, `profile.py`, `kernels/`, `cli.py`.
+- `packs/text_classification/`: `data_*.py`, `train.py`, `evaluate.py`, `model.py`, `metrics.py`,
+  `scoring.py`, `predict.py`, `serving.py` + `serving_app.py` + `dlc/inference.py`,
+  `perf_entry.py`, `sanity.py`, `dapt.py`, `config.py`, `pack.py`.
+- `ops/serve/` (FastAPI shell + image), `ops/train/` (SageMaker job image), `deploy/` (desired
+  versions per env), `.github/workflows/`.
+- `tests/`: offline tests. `tmp_artifacts` redirects artifact paths; `toy_model` roots the toy
+  pack in a tmp tree with a tmp MLflow. No GPU, dataset or AWS.
 
 ## Working rules
 
 - **Lean.** Add a guard only where a real failure mode exists. Serving, ops and perf code stays happy-path and config-driven. The trainer's robustness (auto-resume, OOM retry, NaN guard, atomic writes) is the bar to match.
-- **Reference vs shared.** Trainer and evaluator files are copied and edited per task. Pure, stable, task-agnostic logic lives once in `utils/`, `registry/` or `perf/` and is reused.
-- **Opt-in.** New capabilities are off by default (DAPT, LoRA/QLoRA/QAT, TensorBoard histograms, ONNX serving, the `trt` and `quant` extras, and `perf.apply_tuned`).
-- **Minimal deps.** The pyproject base and `requirements.txt` (the serving runtime) stay torch-free; keep the two in sync. Training, dev and perf deps go in the `dev` extra, TensorRT in `trt`, bitsandbytes and torchao in `quant`. The `cpu` and `gpu` extras are mutually exclusive ORT wheels. The only pre-commit hook is detect-secrets.
-- **GPU, Triton and SageMaker code** is written clean for the GPU box, with no laptop fallbacks.
+- **Platform vs pack.** The platform keeps only the common baseline; a pack owns its data, training, metrics, contract and serving code and may change them freely. Pure, stable, task-agnostic logic lives once in `utils/`, `registry/` or `perf/`.
+- **Opt-in.** New capabilities are off by default (DAPT, LoRA/QLoRA/QAT, TensorBoard histograms, the `trt` and `quant` extras, and `perf.apply_tuned`).
+- **Minimal deps.** The pyproject base and `requirements.txt` (the serving runtime) stay torch-free; keep the two in sync. Training, dev and perf deps go in the `dev` extra, TensorRT in `trt`, bitsandbytes and torchao in `quant`. The `cpu` and `gpu` extras are mutually exclusive ORT wheels. SageMaker calls use boto3 only. The only pre-commit hook is detect-secrets.
+- **No account values in git.** Image, role, bucket, region, build store and MLflow come from env (CI variables); YAML keeps them `null`.
+- **GPU, Triton and SageMaker code** is written clean for the GPU box / AWS, with no laptop fallbacks.
 
 ## Invariants
 
 - **Fine-tune, don't train from scratch.** To change architecture, swap `model.base_model`.
 - **No leakage.** `val` selects, `test` is touched once, and label names come from TRAIN only.
 - **Objective reports, loss selects.** The trainer keeps the best checkpoint on `eval_loss`. `metrics.objective` is what evaluation reports and what the gate and `tune` ranking read by NAME, so they stay task-agnostic.
-- **Storage always; promotion gated.** A model is always saved to disk. Only a model that passes the gate enters the registry. Stage pointers move only through `promote-stage`, and `rollback` restores the previous holder.
-- **Lineage.** Both register sites (`pipeline/stages.py`, `tune/promote.py`) pass metrics and `data_version`. The tune path also passes the MLflow `run_id` and a config snapshot. `registry.base.register` adds `train_hw` centrally.
-- **Tracking ≠ registry.** MLflow logs metrics and curves, with perf runs in experiment `perf`. The registry is the model store.
+- **Storage always; promotion gated.** A model is always saved to disk. Only a model that passes the gate enters the registry. The MLflow alias moves on registration and by hand; stage pointers move only through `promote-stage`, and `rollback` restores the previous holder.
+- **Lineage.** Both register sites (`pipeline/stages.py`, `tune/promote.py`) pass metrics, `data_version` and the training `run_id`. The tune path also passes a config snapshot. `registry.base.register` adds `train_hw` centrally.
+- **Serving reads the model dir only.** A pack's serving code must not need `params.yaml` or the training package; the example pack writes `serving_meta.json` beside the model in `evaluate`.
 
 ## Fine-tune methods vs quantization schemes
 
 - **Methods** (`full|lora|qlora|qat`, `params.yaml finetune`) are quality knobs, compared as `tune` variants in `experiments.yaml`.
 - **PTQ schemes** are infer precisions in the `perf tune infer` sweep, under the quality guard. See `perf/quant.py` `SCHEMES` for the table. The `perf tune train` sweep stays speed-only.
 - **Filtered by the role TARGET** capability (`hardware.yaml`), never by this box.
-- **QAT** scheme must be supported by `targets.infer`. QAT saves float weights plus `quant_scheme.json`; `model.load_trained` applies the recorded scheme, and that is the convert step.
+- **QAT** scheme must be supported by `targets.infer`. QAT saves float weights plus `quant_scheme.json`; `model.load_trained` applies the recorded scheme, and that is the convert step. The serving path (`serving.py`) loads plain weights only.
 
 ## Perf platform
 
 - **Hardware binding** is the core invariant:
-  - Each result is stored at `artifacts/perf/<role>/<hw_id>/<workload>.json`.
+  - Each result is stored at `artifacts/perf/<role>/<hw_id>/<workload>.json` (shared by every model).
   - `hw_id` is built from GPU model, compute capability, VRAM and count. Software versions are recorded but not part of the key.
   - `load_tuned` refuses a result that was tuned on another GPU, so re-tune on the target box.
   - `sweep` and `perf tune` call `assert_role` against `hardware.yaml targets.<role>`, so the infer config is tuned on the infer GPU.
@@ -82,36 +127,31 @@ Three layers share one package (`src/datascience`, imported as `datascience`):
 - **Apply tuned:** `perf.apply_tuned` (off by default) makes the trainer merge `load_tuned("train", "train")`; a result from another GPU stops training.
 - **Quality guard.** Infer candidates must satisfy `quality_drop ≤` the constraint, measured against the first backend at fp32. Kernel configs must match the torch reference within `max_abs_err`.
 - **Inputs are traffic, not knobs.** Infer measures every length bucket and scores the worst one. Kernels run one sweep per shape.
-- **Entry:** `--entry module:fn` supplies the model or trainer. See the workload docstrings for the contract. A new fine-tuning experiment plugs in here without edits to `perf/`.
-- **perf, tune, analyze:**
-  - `perf` tunes speed on hardware.
-  - `tune/` tunes model quality.
-  - `analyze` tunes Triton serving params against real traffic after deploy.
-- **Not wired yet** (needs the serving side ported):
-  - `package_triton` writes precision, batch and `infer_hw` into `serving_meta.json` and `config.pbtxt`
-  - serve refuses an `infer_hw` mismatch
-  - `serve_analyzer` targets the GLiNER input name
+- **Entry:** `--entry module:fn` supplies the model or trainer, e.g. `packs.text_classification.perf_entry:target`. See the workload docstrings for the contract. A new pack plugs in here without edits to `perf/`.
+- **Not wired yet:** tuned precision / batch into a pack's targets, and an `infer_hw` check at serve time.
 
 ## Verification (narrow → wide)
 
-1. `make test`: offline, no GPU.
-2. `datascience perf fingerprint`: shows whether this box matches each target.
-3. On the GPU box: `datascience perf tune infer --entry datascience.infer.perf_entry:target`, `perf tune train --entry datascience.infer.perf_entry:train_target`, `perf profile …`, `perf tune kernel layernorm`.
-4. `datascience perf report`: quant-vs-quality table from the stored infer sweep (writes `report.md` / `report.csv` beside it).
+1. `make test`: offline, no GPU (also run by `ci.yml`).
+2. `python main.py pipeline definition`: the SageMaker pipeline JSON, with no AWS call.
+3. `datascience perf fingerprint`: shows whether this box matches each target.
+4. On the GPU box: `datascience perf tune infer --entry packs.text_classification.perf_entry:target`, `perf tune train --entry packs.text_classification.perf_entry:train_target`, `perf profile …`, `perf tune kernel layernorm`.
+5. `datascience perf report`: quant-vs-quality table from the stored infer sweep (writes `report.md` / `report.csv` beside it).
 
 ## Gotchas
 
 - transformers>=5 API: the trainer passes `warmup_steps` as a ratio and `dtype=`, not the 4.x names.
 - The `quant` extra is GPU-only. bitsandbytes and torchao import lazily; when missing, the scheme raises `Unsupported` and the sweep records it infeasible.
-- `serving.runtime` defaults to `torch`; `onnx` is opt-in and needs `optimize` and `package` first. Never auto-convert.
 - The tuning loop clears `CKPT_DIR` between variants. Otherwise auto-resume loads a mismatched checkpoint.
 - A failing tune variant is recorded with its `error` in `results.json` and ranked last; the loop exits non-zero after ranking the rest, and `promote` refuses it.
+- `--variant` applies to stage commands only: `promote` takes a positional also called `variant`.
 - `CUDA_VISIBLE_DEVICES` defines the box: the fingerprint counts only visible GPUs, so pin one GPU on a shared machine before `perf` commands.
-- The CPU serving image runs from source with `PYTHONPATH=/app/src`. Everywhere else, install with `pip install -e .`.
+- MLflow 3 returns model versions as ints; code that builds paths from them must `str()` them.
+- `triton-python` targets with bundled deps must be packaged on Python 3.10 (the Triton DLC ABI); `pytorch-dlc` targets have no such constraint.
+- The SageMaker SDK v3 dropped the v2 Estimator / workflow API; `cloud/` builds the API requests itself, validated in tests against botocore's SageMaker model.
 
 ## Deferred (not built)
 
 - Monitoring and retrain triggers.
-- CI/CD (there is no workflow on `main`).
-- Remote registry backends beyond s3.
-- The serving hooks listed under "Not wired yet".
+- An approval-event trigger for `release` (an MLflow webhook or registry event); today a human runs the workflow.
+- Endpoint IaC (lives with infra).
