@@ -10,6 +10,11 @@ the device, exit codes propagate (a failing gate exits non-zero).
   python main.py infer --input-file in.jsonl --output-file out.jsonl --batch-size 32
   python main.py serve [--port 8080]             # the FastAPI shell (ops/serve) on the trained model
 
+SageMaker (run by CI, see .github/workflows/pipeline.yml):
+  python main.py train-remote [--wait]           # every stage as one SageMaker Training Job
+  python main.py pipeline definition|upsert|start
+  python main.py sm-step all|train|evaluate|register   # inside a SageMaker job
+
 Artifacts (run by CI, see .github/workflows/release.yml):
   python main.py package --version v20260815     # the pack's targets -> versioned tars + smoke
   python main.py release --version v20260815     # -> S3 build store + manifest.json
@@ -78,6 +83,12 @@ def build_parser(stage_names=(), commands=None) -> argparse.ArgumentParser:
     sv = sub.add_parser("serve", help="run the FastAPI serving shell (ops/serve) on the trained model")
     sv.add_argument("--port", type=int, default=8080)
     sub.add_parser("serve-triton", help="run the packaged Triton repo locally (docker compose)")
+    tr = sub.add_parser("train-remote", help="run every stage as one SageMaker Training Job")
+    tr.add_argument("--wait", action="store_true", help="block until the job ends; fail unless it completed")
+    pl = sub.add_parser("pipeline", help="SageMaker Pipeline: train -> evaluate -> gate -> register")
+    pl.add_argument("action", choices=["definition", "upsert", "start"])
+    sm = sub.add_parser("sm-step", help="the entrypoint inside a SageMaker job")
+    sm.add_argument("step", choices=["all", "train", "evaluate", "register"])
     ps = sub.add_parser("promote-stage", help="point staging/production at a registered version")
     ps.add_argument("name", help="registry model name (registry.name in params.yaml)")
     ps.add_argument("version", help="registered version, e.g. v3 (or 3)")
@@ -167,6 +178,21 @@ def main(argv=None):
                "PORT": str(args.port), "PYTHONPATH": os.pathsep.join([str(paths.PROJECT_ROOT / "ops" / "serve"),
                                                                      str(paths.PROJECT_ROOT)])}
         subprocess.run([sys.executable, "-m", "app.main"], env=env, check=True)
+    elif cmd == "train-remote":
+        from datascience.cloud.train_job import train_remote
+
+        train_remote(wait=args.wait)
+    elif cmd == "pipeline":
+        from datascience.cloud import pipeline
+
+        if args.action == "definition":
+            print(json.dumps(pipeline.definition(), indent=2))
+        else:
+            getattr(pipeline, args.action)()
+    elif cmd == "sm-step":
+        from datascience.cloud.steps import run
+
+        run(args.step)
     elif cmd == "serve-triton":
         from datascience.serve.triton import serve_triton
 

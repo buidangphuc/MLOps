@@ -1,0 +1,18 @@
+region: ap-southeast-1
+image_uri: null
+role_arn: null
+bucket: null
+prefix: mlops/text_classification
+mlflow:
+  tracking_uri: null
+  secret_arn: null
+training:
+  instance_type: ml.g5.xlarge
+  volume_gb: 100
+  max_runtime_s: 86400
+processing:
+  instance_type: ml.g5.xlarge
+  volume_gb: 50
+  max_runtime_s: 7200
+pipeline:
+  name: text-classification
