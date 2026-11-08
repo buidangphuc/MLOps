@@ -67,6 +67,40 @@ release, SageMaker jobs/pipelines, CI deploy and the serving shell; each pack ow
 (IaC); CI ships versions into them. A business app only **calls** the endpoint (for the example
 pack: text in → `{label, score}`).
 
+## Rehearse the whole flow
+
+Every step below ran on one V100 on 2026-11-08. The AWS part uses a local emulator (`moto`), so no
+account is needed; on a laptop add a small variant (e.g. `ingestion.sample_size: 300`,
+`finetune.method: lora`, `training.max_steps: 20`) and pass `--variant`.
+
+```bash
+export MLFLOW_TRACKING_URI=sqlite:///$PWD/rehearsal.db
+python main.py run                                  # train -> evaluate -> gate -> register @champion
+python main.py pull                                 # @champion -> the model dir (what CI release does)
+python main.py package --version v1                 # tar + smoke
+python main.py serve --port 8080 &                  # curl -X POST localhost:8080/api/v1/predict -d '{"text": "..."}'
+
+uvx --from 'moto[server]' moto_server -p 15055 &    # S3 + STS + SageMaker emulator
+export AWS_ENDPOINT_URL=http://127.0.0.1:15055 AWS_ACCESS_KEY_ID=testing AWS_SECRET_ACCESS_KEY=testing AWS_REGION=us-east-1
+export RELEASE_BUILD_STORE=s3://build-store/builds/text_classification
+python -c "import boto3; boto3.client('s3').create_bucket(Bucket='build-store')"
+python main.py release --version v1                 # again with v1 -> refused (immutable)
+
+export SAGEMAKER_IMAGE_URI=123456789012.dkr.ecr.us-east-1.amazonaws.com/mlops-train:dev \
+       SAGEMAKER_ROLE_ARN=arn:aws:iam::123456789012:role/example SAGEMAKER_BUCKET=sm-bucket
+python main.py train-remote
+python main.py pipeline upsert && python main.py pipeline start
+```
+
+`deploy` needs an endpoint: create a `MultiModel` model, endpoint config and endpoint in the
+emulator, point `deploy/<model>/staging.yaml` at it with a version, then
+`python -m datascience.serve.deploy plan --base <sha>` and `... sync <model> staging <target>`.
+`sm-step train|evaluate|register` with `SM_ROOT=<dir>` replays the pipeline's three containers
+locally.
+
+Measured on the V100: `run` about 3 min (macro_f1 0.905), `package` 2 min for the 2 GB model
+(gzip level 6), serving ready in about 15 s.
+
 ## CI and AWS setup
 
 Workflows read repository variables (never committed): `AWS_REGION`, `BUILD_ROLE_ARN` (OIDC role:

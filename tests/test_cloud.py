@@ -135,3 +135,29 @@ def test_sm_steps_round_trip_through_job_dirs(toy_model, tmp_path, monkeypatch):
     uri = os.environ["MLFLOW_TRACKING_URI"]
     mv = MlflowClient(tracking_uri=uri, registry_uri=uri).get_model_version_by_alias("ToyModel", "champion")
     assert str(mv.version) == "1" and mv.tags["dataset"] == "toy"
+
+
+def test_upsert_creates_then_updates(sm_env, monkeypatch):
+    import boto3
+    from botocore.exceptions import ClientError
+
+    from datascience.cloud import pipeline
+
+    calls = []
+
+    class SM:
+        def create_pipeline(self, **kw):
+            if any(c[0] == "create" for c in calls):
+                calls.append(("create-refused",))
+                raise ClientError({"Error": {"Code": "ValidationException",
+                                             "Message": "Pipeline names must be unique: already exists"}}, "CreatePipeline")
+            calls.append(("create", json.loads(kw["PipelineDefinition"])["Version"]))
+
+        def update_pipeline(self, **kw):
+            calls.append(("update", kw["PipelineName"]))
+
+    monkeypatch.setattr(boto3, "client", lambda svc, **k: SM())
+    pipeline.upsert()
+    pipeline.upsert()
+
+    assert calls == [("create", "2020-12-01"), ("create-refused",), ("update", "toy")]

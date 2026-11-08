@@ -111,13 +111,16 @@ def upsert() -> str:
     C.require(cfg, "image_uri", "role_arn", "bucket", "region")
     sm = boto3.client("sagemaker", region_name=cfg["region"])
     name, body = _name(cfg), json.dumps(definition())
+    from botocore.exceptions import ClientError
+
     try:
-        sm.describe_pipeline(PipelineName=name)
-        sm.update_pipeline(PipelineName=name, PipelineDefinition=body, RoleArn=cfg["role_arn"])
-        log.info(f"updated pipeline {name}")
-    except sm.exceptions.ResourceNotFound:
         sm.create_pipeline(PipelineName=name, PipelineDefinition=body, RoleArn=cfg["role_arn"])
         log.info(f"created pipeline {name}")
+    except ClientError as e:
+        if "already exists" not in e.response["Error"].get("Message", ""):
+            raise
+        sm.update_pipeline(PipelineName=name, PipelineDefinition=body, RoleArn=cfg["role_arn"])
+        log.info(f"updated pipeline {name}")
     return name
 
 

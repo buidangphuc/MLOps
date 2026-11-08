@@ -49,20 +49,29 @@ openspec/          specs and change proposals
 
 ```bash
 pip install -e .[dev,cpu]
-python main.py run                      # full pipeline (downloads a sample dataset on first run)
+python main.py run                      # ingest -> train -> evaluate -> gate -> register (MLflow @champion)
 python main.py infer --text "Central bank raises interest rates"
-python main.py serve                    # FastAPI shell on the trained model
+python main.py package --version v1     # versioned tar + smoke
+python main.py serve                    # FastAPI shell: POST /api/v1/predict {"text": ...}
 make test                               # offline, no GPU
 ```
 
+The default run fully fine-tunes Qwen2.5-0.5B on 3,000 AG News rows: about 3 minutes on one V100.
+On a laptop, run a smaller variant first. Rehearsing the whole flow, AWS steps included, without an
+AWS account: [docs/usage.md](docs/usage.md#rehearse-the-whole-flow).
+
 ## Status
 
-Built: per-model packs, fine-tune methods, MLflow / S3 registry with pointers and rollback, versioned
-packaging + release, SageMaker Training Job / Pipeline, CI deploy, GPU perf platform with PTQ schemes.
-GPU smoke passed on a V100 on 2026-10-12; int4-wo, fp8 and bf16 are unverified (need sm_80+). The
-SageMaker and deploy paths are tested offline against the AWS API schemas; they need an AWS account
-with the roles in [docs/usage.md](docs/usage.md#ci-and-aws-setup) to run for real.
-**Deferred:** wiring tuned perf configs into packaging, production monitoring, endpoint IaC.
+- **Built:** per-model packs; fine-tune methods; MLflow / S3 registry with pointers and rollback; versioned packaging and release; SageMaker Training Job and Pipeline; CI deploy; GPU perf platform with PTQ schemes.
+- **Whole flow on one V100 (2026-11-08):**
+  - `run` with the shipped config: test macro_f1 0.905, gate passed, registered @champion.
+  - `pull` → `package` (smoke passed, 2 min) → `serve` (correct labels).
+  - `release` (a second release of the same version is refused) → `deploy` plan + sync (copies once, then only smoke-invokes).
+  - `train-remote`, `pipeline upsert` + `start`.
+  - `sm-step` train → evaluate → register in fresh trees.
+- **AWS steps** ran against a local emulator (moto) and are tested against the AWS API schemas. A real account needs the roles in [docs/usage.md](docs/usage.md#ci-and-aws-setup).
+- **Unverified:** int4-wo, fp8 and bf16 (need sm_80+).
+- **Deferred:** wiring tuned perf configs into packaging, production monitoring, endpoint IaC.
 
 ## Docs
 

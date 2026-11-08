@@ -83,7 +83,7 @@ def _pytorch_dlc(t, key: str, bundle: bool) -> Path:
     _materialize(t.files, root)
     names = sorted(f.relative_to(root).as_posix() for f in root.rglob("*") if f.is_file())
     tar_path = paths.MME_TARS / f"{key}.tar.gz"
-    with open(tar_path, "wb") as raw, gzip.GzipFile(filename="", fileobj=raw, mode="wb", mtime=0) as gz, \
+    with open(tar_path, "wb") as raw, gzip.GzipFile(filename="", fileobj=raw, mode="wb", mtime=0, compresslevel=6) as gz, \
             tarfile.open(fileobj=gz, mode="w") as tar:
         for name in names:
             data = (root / name).read_bytes()
