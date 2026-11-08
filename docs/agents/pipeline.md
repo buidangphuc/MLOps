@@ -70,7 +70,7 @@ infra-as-code outside this repo. A SageMaker MME caches a model **by S3 key**, s
 - `config/`: `hardware.yaml` and `perf.yaml` (shared), and per model `config/<id>/`:
   `params.yaml` (the experiment), `experiments.yaml` (tuning variants), `serving.yaml` (targets,
   build store), `sagemaker.yaml` (instances, prefix; account values come from env).
-- `pack.py` (loader + `Target`), `pipeline/stages.py` (runner + gate/register), `cli.py`
+- In `src/datascience/`: `pack.py` (loader + `Target`), `pipeline/stages.py` (runner + gate/register), `cli.py`
   (pre-parses `--model`, builds stage commands from the pack), `config/configuration.py` (common
   sections only).
 - `registry/`: `base.register` (local always, remote through `_REMOTE_BACKENDS`: `mlflow`, `s3`;

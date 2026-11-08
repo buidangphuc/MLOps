@@ -42,7 +42,7 @@ tests/             offline tests (no GPU, no downloads, no AWS); tests/toy is a 
 docs/              usage.md, agents/ (rules and code map)
 ops/               serve/ (FastAPI image), train/ (SageMaker job image), compose stacks
 .github/workflows/ ci, pipeline, release, deploy
-openspec/          specs and change proposals
+AGENTS.md          agent guide (CLAUDE.md imports it); .claude/skills/ holds task recipes
 ```
 
 ## Quickstart
@@ -78,4 +78,4 @@ AWS account: [docs/usage.md](docs/usage.md#rehearse-the-whole-flow).
 - [docs/usage.md](docs/usage.md): pipeline, commands, CI and AWS setup, install profiles, config files, GPU smoke runbook
 - [docs/agents/pipeline.md](docs/agents/pipeline.md): model packs, lifecycle, code map, invariants
 - [docs/agents/project.md](docs/agents/project.md): checks, tracker, rules for contributors
-- [openspec/](openspec/): specs and changes
+- [AGENTS.md](AGENTS.md): where an agent starts; task recipes in [.claude/skills/](.claude/skills/) (add a model pack, run on a GPU box, release a model, compare and gate)

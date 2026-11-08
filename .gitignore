@@ -23,4 +23,5 @@ mlflow.db
 *.pem
 *.key
 .DS_Store
-.claude/
+.claude/*
+!.claude/skills/
